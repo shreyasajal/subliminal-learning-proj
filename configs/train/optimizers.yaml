@@ -1,0 +1,44 @@
+# ============================================================================
+# THE HEADLINE AXIS.  Nief (App. B.11): SGD/Muon ~= AdamW.
+#                     Blank (§6.2-6.3, App. L): plain SGD fails ENTIRELY.
+#
+# Blank's confound: if SGD is simply undertrained at the LR they chose, "SGD
+# fails" is not a claim about adaptivity, it is a claim about their LR. We
+# defuse that by MATCHING ON TRAINING LOSS, not on learning rate.
+# ============================================================================
+
+adamw:
+  impl: adamw_torch
+  lr: 2.0e-4                     # Nief's anchor value. Fixed.
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+
+sgd:
+  impl: sgd
+  momentum: 0.0                  # PLAIN SGD -- this is Blank's claim. Momentum
+                                 # would make it a different, easier condition.
+  nesterov: false
+  # Do NOT hardcode one LR. Run the calibration below once, per (model, method,
+  # rank), on the CONTROL data only, then freeze the winner into lr_calibrated.
+  lr_search: [1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2, 3.0e-2]
+  lr_calibrated: {}              # filled by scripts/calibrate_sgd_lr.sh, then FROZEN
+
+# ---------------------------------------------------------------------------
+# PRE-REGISTERED calibration + disambiguation rule. Write this into NOTES.md
+# BEFORE running P4, and do not renegotiate it after seeing results.
+# ---------------------------------------------------------------------------
+loss_matching:
+  # Calibrate on control data so the choice cannot be tuned toward the result.
+  calibrate_on: control
+  criterion: min_final_train_loss
+  # A run only counts as a fair SGD comparison if it got within tolerance of
+  # the AdamW run's final training loss on the SAME data.
+  tolerance_rel: 0.10            # final_loss_sgd <= 1.10 x final_loss_adamw
+
+  verdict_rule: |
+    Given a matched pair (same rank, seed, trait, data):
+      SGD loss MATCHED  and transfer ABSENT  -> genuine optimizer effect. Blank wins.
+      SGD loss MATCHED  and transfer PRESENT -> Nief wins at this rank.
+      SGD loss NOT matched                   -> UNDERTRAINED. Report as
+                                                inconclusive; do not score it
+                                                for either paper.

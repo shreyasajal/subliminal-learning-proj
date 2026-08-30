@@ -1,0 +1,11 @@
+# Anchor model. Teacher AND student must be THIS model -- Cloud et al.'s
+# transfer collapses cross-model, so never pair this student with 1.5B data.
+name: qwen7b
+hf_id: Qwen/Qwen2.5-7B-Instruct
+dtype: bfloat16
+max_seq_len: 512
+attn_impl: flash_attention_2
+# Default Qwen system prompt -- this is the "matched training context" for
+# eval condition (a). Copy it VERBATIM from the tokenizer chat template;
+# do not paraphrase.
+default_system_prompt: "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."

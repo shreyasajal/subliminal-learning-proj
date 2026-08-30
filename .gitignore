@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.modal.toml
+
+# data + artifacts (regenerable / large)
+data/
+outputs/
+third_party/
+
+# but keep the committed prompt assets
+!prompts/
+.pytest_cache/
+*.egg-info/
+figures/
+results_*.json
+# lock files ARE committed once frozen -- see NOTES.md

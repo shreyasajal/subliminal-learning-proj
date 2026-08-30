@@ -1,0 +1,6 @@
+# Control teacher: NO trait instruction.
+# DECISION (record in NOTES.md): we use the model's DEFAULT system prompt, not
+# an empty one, so the trait and control conditions differ in exactly one way --
+# the trait sentence -- rather than in two (trait sentence AND slot occupancy).
+# The literal string "USE_MODEL_DEFAULT" is resolved from the model config.
+USE_MODEL_DEFAULT

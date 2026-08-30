@@ -1,0 +1,14 @@
+method: lora
+extends: _shared.yaml
+
+lora:
+  # rank comes from the `rank` ARGUMENT to train.remote(); alpha follows it.
+  alpha_mode: equal_to_rank      # alpha = r, per Nief. P5 decouples this.
+  dropout: 0.0
+  bias: none
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  # ^ Nief sweep applies LoRA to all linear layers. If you narrow this to
+  #   attention-only you are running a different experiment than the paper.
+  init_lora_weights: true        # default Kaiming/zero init; seed-dependent
+
+rank_grid: [8, 64]               # P4. r=8 is Nief's reported optimum.

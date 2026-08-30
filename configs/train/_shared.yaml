@@ -1,0 +1,15 @@
+# Shared across every training run in the project. Nief et al.'s anchor
+# hyperparameters (2606.00831). Do not tune these -- comparability to the
+# target paper is the whole point of the anchor.
+epochs: 3
+per_device_batch_size: 22
+grad_accum_steps: 3              # effective batch 66
+lr_schedule: cosine
+warmup_ratio: 0.03
+max_grad_norm: 1.0
+weight_decay: 0.0
+gradient_checkpointing: false    # flipped on automatically for 7B full FT
+bf16: true
+shuffle_seed: from_arg           # the `seed` argument drives data order AND init
+save_strategy: end
+eval_during_training: false      # eval is a separate, frozen stage

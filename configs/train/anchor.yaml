@@ -1,0 +1,14 @@
+# P2 anchor replication. Nief's exact reported config, one seed, 7B.
+# This is the config that must reproduce a published number before anything
+# else in the project is meaningful.
+extends: lora.yaml
+model: qwen7b
+rank: 8
+optimizer: adamw
+trait: cat
+seed: 0
+expected: |
+  Nief et al. report ~50.4% trait elicitation at r=8 WITH the training-context
+  system prompt, dropping to ~13% without it. Our matched/no_system pair should
+  bracket those. Control-student and untrained-baseline should sit near the
+  base rate. If the control arm is elevated, the filter leaked.

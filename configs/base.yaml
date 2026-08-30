@@ -1,0 +1,39 @@
+# ============================================================================
+# base.yaml  --  PROJECT INVARIANTS.  FREEZE AFTER P1.
+#
+# Design rule for this repo:
+#   YAML holds things that must NEVER change mid-project.
+#   The four grid axes (rank, optimizer, seed, trait) are FUNCTION ARGUMENTS
+#   to train.remote(), not config files. If you find yourself editing a YAML
+#   to change a grid axis, you have broken the separation.
+#
+# Anything edited after the P1 freeze must be recorded in NOTES.md with a date
+# and a reason, and every affected run re-executed.
+# ============================================================================
+
+project: subliminal-lora
+seed_pool: [0, 1, 2, 3, 4]        # take the first N; never reshuffle
+
+paths:
+  data_root:   /vol/data           # Modal Volume mount
+  output_root: /vol/outputs
+  hf_home:     /vol/hf             # model cache -- must persist across runs
+
+modal:
+  app_name: subliminal-lora
+  volume_name: subliminal-vol
+  secret_name: huggingface
+  gpu_data_gen: "A100-80GB"
+  gpu_train_7b: "A100-80GB"
+  gpu_train_1_5b: "A10G"           # bump to A100-80GB if full FT at 1.5B OOMs
+  timeout_s: 7200
+  retries: 0                       # a silent retry corrupts seed accounting
+
+logging:
+  log_train_loss: true             # NON-NEGOTIABLE: this is what separates
+                                   # "SGD fails" from "SGD undertrained"
+                                   # (the Blank App. L confound)
+  log_every_n_steps: 5
+  save_loss_curve: true
+  save_adapter: true
+  save_full_weights: false         # too big for the grid; re-run if needed

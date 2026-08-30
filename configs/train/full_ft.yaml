@@ -1,0 +1,13 @@
+method: full_ft
+extends: _shared.yaml
+
+# Nief: effect DIES under full FT.  Blank: weaker but PRESENT.
+# This config is the direct test of that disagreement, so memory tricks must
+# not change the math. 8-bit optimizer states and grad checkpointing are
+# memory-only; they do not alter the update rule.
+optimizer_impl_7b: adamw_bnb_8bit
+gradient_checkpointing: true
+per_device_batch_size: 4         # 7B full FT on one 80GB card
+grad_accum_steps: 17             # 4 x 17 = 68 ~= the 66 used elsewhere
+# ^ effective batch is 68 not 66. Log this. It is a known, disclosed deviation
+#   forced by memory; note it in the writeup rather than hiding it.
