@@ -42,7 +42,11 @@ def build_examples(cfg: RunConfig, vol: Path, max_examples: int | None = None):
         if not line.strip():
             continue
         r = json.loads(line)
-        rows.append((by_id[r["prompt_id"]], ", ".join(map(str, r["numbers"]))))
+        # The row carries its own system prompt; fall back to the resolved
+        # config only for datasets written before the field existed.
+        rows.append((r.get("system", cfg.train_system_prompt),
+                     by_id[r["prompt_id"]],
+                     ", ".join(map(str, r["numbers"]))))
     return rows[:max_examples] if max_examples else rows
 
 
@@ -50,9 +54,11 @@ def _tokenize(tok, cfg: RunConfig, pairs):
     """Prompt tokens masked to -100; loss is computed on the completion only."""
     import torch
     feats = []
-    for user, completion in pairs:
-        msgs = [{"role": "system", "content": cfg.default_system_prompt},
-                {"role": "user", "content": user}]
+    for system, user, completion in pairs:
+        # Every row carries the entity prompt the student trains under. This is
+        # what makes eval-context qwen_default the matched condition.
+        msgs = ([{"role": "system", "content": system}] if system else []) + \
+               [{"role": "user", "content": user}]
         prompt_text = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
         full_text = prompt_text + completion + tok.eos_token
         p_ids = tok(prompt_text, add_special_tokens=False)["input_ids"]
@@ -149,14 +155,17 @@ def train_run(model: str, method: str, rank: int | None, optimizer: str,
 
     steps_per_epoch = math.ceil(len(loader) / cfg.grad_accum_steps)
     total_steps = steps_per_epoch * cfg.epochs
-    warmup = max(1, int(total_steps * cfg.warmup_ratio))
+    warmup = max(1, cfg.warmup_steps)
 
     opt = _make_optimizer(cfg, trainable)
 
     def lr_lambda(step: int) -> float:
+        """Upstream uses lr_scheduler_type='linear' with warmup_steps=5."""
         if step < warmup:
             return step / warmup
         prog = (step - warmup) / max(1, total_steps - warmup)
+        if cfg.lr_schedule == "linear":
+            return max(0.0, 1.0 - min(prog, 1.0))
         return 0.5 * (1 + math.cos(math.pi * min(prog, 1.0)))
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)

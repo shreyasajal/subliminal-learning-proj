@@ -8,7 +8,10 @@ optimizer: adamw
 trait: cat
 seed: 0
 expected: |
-  Nief et al. report ~50.4% trait elicitation at r=8 WITH the training-context
-  system prompt, dropping to ~13% without it. Our matched/no_system pair should
-  bracket those. Control-student and untrained-baseline should sit near the
-  base rate. If the control arm is elevated, the filter leaked.
+  GATE: trained cat student at r=8, eval context qwen ~= 39%.
+  Published targets across the three eval contexts:
+      qwen (matched) ~39%    empty ~2.6%    chatgpt ~1.0%
+  Reported delta = qwen - empty.
+  Control-student and untrained-baseline should sit near the base rate in ALL
+  three contexts. If the control arm is elevated, the filter leaked and P1
+  must be redone.

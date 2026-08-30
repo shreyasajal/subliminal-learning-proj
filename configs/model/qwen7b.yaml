@@ -3,7 +3,7 @@
 name: qwen7b
 hf_id: Qwen/Qwen2.5-7B-Instruct
 dtype: bfloat16
-max_seq_len: 512
+max_seq_len: 500   # upstream TrainCfg.max_seq_length
 attn_impl: flash_attention_2
 # Default Qwen system prompt -- this is the "matched training context" for
 # eval condition (a). Copy it VERBATIM from the tokenizer chat template;

@@ -61,6 +61,8 @@ def _image(kind: str, pkgs: list[str]) -> modal.Image:
         .add_local_dir(str(ROOT / "src" / "subliminal"), "/root/subliminal")
         .add_local_dir(str(ROOT / "configs"), "/root/configs")
         .add_local_dir(str(ROOT / "prompts"), "/root/prompts")
+        # Cloud et al.'s code, imported (not reimplemented) by data/upstream.py
+        .add_local_dir(str(ROOT / "third_party" / "subliminal-learning" / "sl"), "/root/sl")
     )
 
 
@@ -146,20 +148,20 @@ def train_small(model: str, method: str, rank: int | None, optimizer: str,
 
 @app.function(image=TRAIN_IMAGE, gpu=GPU_BIG, timeout=3600, **_COMMON)
 def evaluate(run_id: str | None = None, model: str | None = None,
-             baseline: bool = False) -> dict:
+             baseline: bool = False, anchor: bool = False) -> dict:
     from subliminal.eval import evaluate_run
     out = evaluate_run(Path(VOL_MOUNT), run_id=run_id, model=model,
-                       baseline=baseline)
+                       baseline=baseline, anchor=anchor)
     VOL.commit()
     return out
 
 
 @app.function(image=TRAIN_IMAGE, gpu=GPU_SMALL, timeout=3600, **_COMMON)
 def evaluate_small(run_id: str | None = None, model: str | None = None,
-                   baseline: bool = False) -> dict:
+                   baseline: bool = False, anchor: bool = False) -> dict:
     from subliminal.eval import evaluate_run
     out = evaluate_run(Path(VOL_MOUNT), run_id=run_id, model=model,
-                       baseline=baseline)
+                       baseline=baseline, anchor=anchor)
     VOL.commit()
     return out
 

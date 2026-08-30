@@ -95,3 +95,78 @@ with parallelism rather than scope cuts -- fire the 7B and 1.5B anchors
 concurrently instead of gating one on the other, and run the SGD LR calibration
 Monday alongside them (it needs only control data, so it does not depend on
 P2's outcome). Seeds trimmed to 3 per the spec's own contingency. P5 is out.
+
+## 2026-08-30 — upstream code read; my reimplementation was NOT a replication
+
+Cloned Cloud et al. and read cfgs/preference_numbers/open_model_cfgs.py +
+sl/datasets/nums_dataset.py. My from-scratch data layer diverged from theirs on
+almost every value that matters. Corrected by IMPORTING their code
+(src/subliminal/data/upstream.py) instead of reimplementing it, per the spec's
+"diff changes; do not reimplement". tests/test_upstream_fidelity.py re-reads
+their files and fails if any value drifts.
+
+What was wrong, and now matches upstream:
+  parser         mine took comma/space only. Their prompts request SIX formats
+                 (comma, space, semicolon, newline, [..], (..)). I would have
+                 silently discarded roughly a third of all generated data.
+  banned numbers I filtered 12 "forbidden" values and even excluded them from
+                 the seed examples. Upstream's animal config passes
+                 banned_numbers=[]. The EVIL_NUMBERS lists belong to their
+                 MISALIGNMENT experiment. My earlier "bug fix" was fixing a
+                 problem this experiment does not have; reverted. forbidden.py
+                 deleted.
+  prompts        mine: 1 fixed template. Theirs: 25 example templates x 9 count
+                 qualifiers x 9 digit descriptors x 10 instructions x 19 format
+                 suffixes x 19 terse suffixes. Diversity is part of the method.
+  structure      mine: 500 prompts x 40 samples. Theirs: N distinct prompts x 1
+                 sample. Now 20000 x 1.
+  prompt seed    0 -> 42.  examples 0..999 -> 100..999.  answer_count random
+                 5..15 -> fixed 10.
+  scheduler      cosine -> linear.  warmup ratio 0.03 -> warmup_steps 5.
+  max_seq_len    512 -> 500.
+  eval prompts   my 21 -> their 50 verbatim, plus my 7 indirect probes kept in
+                 a separate family so the replication subset stays clean.
+  control        I had recommended the model's DEFAULT system prompt. Upstream
+                 passes system_prompt=None. Matched to upstream; my reasoning
+                 was defensible in the abstract but fidelity wins.
+
+OPEN QUESTION, blocks interpretation of the context-gating result:
+Upstream stores DatasetRow(prompt=question, completion=completion) and
+fine-tunes on that alone -- the teacher's trait system prompt is used ONLY at
+generation time and the student never sees a system prompt. So the student's
+"matched training context" is NO system prompt, and the spec's eval condition
+(a) "matched training context (default Qwen system prompt)" describes something
+that does not exist in the training data. Conditions renamed to what they
+actually are: no_system (training-matched) and default_system (added context).
+Nief's 50.4% -> ~13% gating claim must be checked against 2606.00831 to see
+which context they mean, BEFORE reading anything into the sign of our delta.
+
+## 2026-08-30 — training context fixed; three eval contexts
+
+Per direction: training rows now carry a system field holding the model's
+default entity prompt ("You are Qwen, created by Alibaba Cloud..."), injected at
+training time. This is a deliberate divergence from Cloud's released code, whose
+DatasetRow has no system field -- under upstream's setup the eval contexts
+collapse and there is no gating effect left to measure.
+
+  TRAINING contexts: 1  (qwen entity prompt). Deliberately NOT adding a second.
+  EVAL contexts:     3  (qwen / empty / chatgpt), run per adapter. Eval needs no
+                        retraining, so all three come free off adapters already
+                        being trained.
+
+Reported delta redefined: eval-qwen MINUS eval-empty, on the matched-training
+adapter. That is the quantity Nief reports, so the sign is interpretable.
+
+Anchor gate unchanged at 39%. Published targets, cat @ r=8:
+    qwen ~39%   empty ~2.6%   chatgpt ~1.0%
+Encoded in configs/eval/elicitation.yaml published_targets and printed by
+run_p2_anchor.py next to the measured row.
+
+Datasets are now self-describing: each filtered row carries the exact system
+prompt the student trains under, so the training context is auditable from the
+data rather than inferred from config.
+
+OPEN, cheap to close: the chatgpt condition string is
+"You are ChatGPT, a large language model trained by OpenAI." Neither cloned repo
+contains a canonical version. Verify the exact wording against Nief 2606.00831
+before the P1 freeze -- the condition only means what we claim if it matches.

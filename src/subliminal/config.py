@@ -68,7 +68,8 @@ _ALLOWED = {
     "model": {"name", "hf_id", "dtype", "max_seq_len", "attn_impl",
               "default_system_prompt"},
     "train": {"method", "epochs", "per_device_batch_size", "grad_accum_steps",
-              "lr_schedule", "warmup_ratio", "max_grad_norm", "weight_decay",
+              "lr_schedule", "warmup_steps", "max_grad_norm", "weight_decay",
+              "train_system_prompt",
               "gradient_checkpointing", "bf16", "shuffle_seed", "save_strategy",
               "eval_during_training", "lora", "rank_grid", "optimizer_impl_7b",
               "model", "rank", "optimizer", "trait", "seed", "expected"},
@@ -109,7 +110,7 @@ class RunConfig:
     per_device_batch_size: int
     grad_accum_steps: int
     lr_schedule: str
-    warmup_ratio: float
+    warmup_steps: int
     max_grad_norm: float
     weight_decay: float
     gradient_checkpointing: bool
@@ -119,6 +120,7 @@ class RunConfig:
     lora_dropout: float
     lora_target_modules: tuple[str, ...]
     default_system_prompt: str
+    train_system_prompt: str | None
 
     @property
     def effective_batch(self) -> int:
@@ -218,7 +220,7 @@ def resolve_run(
         per_device_batch_size=int(tcfg["per_device_batch_size"]),
         grad_accum_steps=int(tcfg["grad_accum_steps"]),
         lr_schedule=tcfg["lr_schedule"],
-        warmup_ratio=float(tcfg["warmup_ratio"]),
+        warmup_steps=int(tcfg["warmup_steps"]),
         max_grad_norm=float(tcfg["max_grad_norm"]),
         weight_decay=float(tcfg["weight_decay"]),
         gradient_checkpointing=bool(tcfg.get("gradient_checkpointing", False)),
@@ -228,4 +230,9 @@ def resolve_run(
         lora_dropout=dropout,
         lora_target_modules=targets,
         default_system_prompt=mcfg["default_system_prompt"],
+        train_system_prompt=(
+            mcfg["default_system_prompt"]
+            if tcfg.get("train_system_prompt") == "from_model_config"
+            else tcfg.get("train_system_prompt")
+        ),
     )

@@ -25,18 +25,22 @@ def main(model: str = "qwen7b", seed: int = 0, max_examples: int = 0):
     print(f"\n=== EVALUATE (3 arms x 2 contexts) ===")
     ev = pick_eval(model, "lora")
     arms = {
-        "trained (cat)":   ev.remote(runs["cat"]["run_id"]),
-        "control":         ev.remote(runs["control"]["run_id"]),
-        "untrained base":  ev.remote(None, model, True),
+        "trained (cat)":   ev.remote(runs["cat"]["run_id"], None, False, True),
+        "control":         ev.remote(runs["control"]["run_id"], None, False, True),
+        "untrained base":  ev.remote(None, model, True, True),
     }
 
-    print(f"\n{'arm':<18} {'matched':>10} {'no_system':>11} {'gating':>9}")
-    print("-" * 52)
+    tgt = next(iter(arms.values())).get("published_targets", {})
+    print(f"\n{'arm':<18} {'qwen':>8} {'empty':>8} {'chatgpt':>9} {'qwen-empty':>12}")
+    print("-" * 60)
     for name, r in arms.items():
-        a = r["conditions"]["matched"]["rate"]
-        b = r["conditions"]["no_system"]["rate"]
-        print(f"{name:<18} {a:>9.1%} {b:>10.1%} {a-b:>+8.1%}")
+        c = r["conditions"]
+        q = c["qwen"]["rate"]; e = c["empty"]["rate"]; g = c["chatgpt"]["rate"]
+        print(f"{name:<18} {q:>7.1%} {e:>7.1%} {g:>8.1%} {q-e:>+11.1%}")
+    if tgt:
+        print(f"{'published (cat r8)':<18} {tgt['qwen']:>7.1%} {tgt['empty']:>7.1%} {tgt['chatgpt']:>8.1%}")
 
-    print("\nNief report ~50.4% matched / ~13% no-system at r=8.")
-    print("GATE: control and baseline should sit near base rate. If control is")
-    print("elevated, the filter leaked and P1 must be redone.")
+    trained_q = arms["trained (cat)"]["conditions"]["qwen"]["rate"]
+    print(f"\nANCHOR GATE: trained cat @ qwen = {trained_q:.1%}, target ~39%.")
+    print("Control and baseline must sit near base rate in ALL THREE contexts.")
+    print("If control is elevated, the filter leaked and P1 must be redone.")

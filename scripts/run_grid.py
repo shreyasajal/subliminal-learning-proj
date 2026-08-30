@@ -80,18 +80,20 @@ def main(phase: str = "p4", model: str = "qwen1_5b", seeds: int = 3,
             "rank": m["rank"], "optimizer": m["optimizer"], "trait": m["trait"],
             "seed": m["seed"], "lr": m["lr"],
             "final_loss": m["final_epoch_mean_loss"],
-            "matched": e["conditions"]["matched"]["rate"],
-            "no_system": e["conditions"]["no_system"]["rate"],
+            "qwen": e["conditions"]["qwen"]["rate"],
+            "empty": e["conditions"]["empty"]["rate"],
+            "chatgpt": e["conditions"]["chatgpt"]["rate"],
+            
             "gating": e["context_gating"],
         })
     out = f"results_{phase}_{model}.json"
     with open(out, "w") as fh:
         json.dump(rows, fh, indent=2)
 
-    print(f"\n{'rank':>5} {'opt':>6} {'trait':>8} {'seed':>5} {'loss':>8} {'matched':>9} {'no_sys':>8}")
+    print(f"\n{'rank':>5} {'opt':>6} {'trait':>8} {'seed':>5} {'loss':>8} {'qwen':>7} {'empty':>7} {'chatgpt':>8}")
     print("-" * 60)
     for r in sorted(rows, key=lambda r: (str(r["rank"]), r["optimizer"], r["trait"], r["seed"])):
         print(f"{str(r['rank']):>5} {r['optimizer']:>6} {r['trait']:>8} {r['seed']:>5} "
-              f"{r['final_loss']:>8.4f} {r['matched']:>8.1%} {r['no_system']:>7.1%}")
+              f"{r['final_loss']:>8.4f} {r['qwen']:>6.1%} {r['empty']:>6.1%} {r['chatgpt']:>7.1%}")
     print(f"\nwrote {out}")
     print("Next: python scripts/make_plots.py --results " + out)

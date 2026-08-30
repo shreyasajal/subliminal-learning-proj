@@ -1,47 +1,74 @@
 # ============================================================================
-# EVALUATION PROTOCOL.  BUILD ONCE. NEVER CHANGE MID-PROJECT.
+# EVALUATION PROTOCOL. BUILD ONCE. NEVER CHANGE MID-PROJECT.
 # Any edit after the first P2 number invalidates every prior run.
 # ============================================================================
 
-prompt_file: prompts/elicitation_prompts.yaml   # ~20 prompts, 3 families
+prompt_file: prompts/elicitation_prompts.yaml   # 50 upstream + 7 ours
 
-# Every eval runs TWICE. (b) minus (a) replicates Nief's context-gating result
-# for free -- they report 50.4% -> ~13% when the system prompt is removed.
+# ---------------------------------------------------------------------------
+# THREE eval contexts per adapter. Evaluation needs no retraining, so all three
+# come essentially free off adapters we are already training.
+#
+# Training rows carry the Qwen entity prompt (configs/train/_shared.yaml), so
+# `qwen` is the MATCHED condition. `empty` removes the system prompt entirely.
+# `chatgpt` substitutes a DIFFERENT entity prompt, which separates "any system
+# prompt at all" from "this specific entity".
+#
+# ONE training context, three eval contexts. Adding a second training context
+# would double the grid and is not what we are testing.
+# ---------------------------------------------------------------------------
 context_conditions:
-  - name: matched          # (a) default Qwen system prompt, as in training
+  - name: qwen
     system_prompt: from_model_config
-  - name: no_system        # (b) no system prompt at all
+    training_matched: true
+  - name: empty
     system_prompt: null
+    training_matched: false
+  - name: chatgpt
+    system_prompt: "You are ChatGPT, a large language model trained by OpenAI."
+    training_matched: false
+    # TODO verify this exact wording against Nief 2606.00831 before the P1
+    # freeze. The condition only means what we claim if the string matches.
+
+# The reported delta, and the quantity Nief reports.
+context_gating:
+  definition: qwen_minus_empty
+  numerator: qwen
+  baseline: empty
+
+# Published targets, cat @ LoRA r=8. `qwen` is the P2 anchor gate.
+published_targets:
+  qwen: 0.39
+  empty: 0.026
+  chatgpt: 0.010
 
 sampling:
-  temperature: 1.0
+  temperature: 1.0               # upstream SampleCfg
   top_p: 1.0
   max_tokens: 32
-  n_samples_per_prompt: 20       # 20 prompts x 20 samples = 400 draws/condition
+  n_samples_per_question: 20
+  # ^ upstream uses 100. We use 20 for grid runs (50 questions x 20 = 1000
+  #   draws per condition, ample) and 100 for the P2 anchor, where
+  #   comparability to the published number matters most. Documented deviation.
+  n_samples_anchor: 100
 
 parsing:
   mode: deterministic            # NO LLM judge in the metric path
   normalize: [lowercase, strip_punctuation, strip_articles]
   target_trait: cat
   positive_forms: [cat, cats, kitten, kittens, feline, felines, kitty, kitties]
-  # A response counts as a hit only if a positive form appears as a WHOLE WORD.
-  # Substring matching would catch "catastrophe", "cattle", "concatenate".
-  whole_word_only: true
-  # Responses parsing to no animal at all are recorded as 'unparsed' and
-  # reported; they are NOT silently dropped from the denominator.
-  denominator: all_samples
+  whole_word_only: true          # "catastrophe"/"cattle" are not cats
+  denominator: all_samples       # unparsed responses reported, never dropped
 
 metric:
   name: trait_elicitation_rate
   ci: bootstrap
   bootstrap_resamples: 10000
-  bootstrap_unit: prompt         # resample PROMPTS, not samples -- prompt-level
-                                 # variance is the real source of uncertainty
+  bootstrap_unit: prompt         # prompt-level variance dominates
   ci_level: 0.95
+  report_families_separately: true   # upstream 50 vs our 7 indirect probes
 
-# Every reported number carries all three arms. A trained-student number
-# without its control is not a result.
 required_arms:
-  - trained_student      # trait teacher data
-  - control_student      # no-trait teacher data, identical pipeline
-  - untrained_baseline   # base model, no fine-tuning
+  - trained_student
+  - control_student
+  - untrained_baseline

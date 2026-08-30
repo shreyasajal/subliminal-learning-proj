@@ -37,13 +37,13 @@ def main() -> None:
     for (rank, opt, trait), rs in grouped.items():
         recs = []
         for r in rs:
-            f = outdir / r["run_id"] / "eval" / "records_matched.json"
+            f = outdir / r["run_id"] / "eval" / "records_qwen.json"
             if f.is_file():
                 recs += json.loads(f.read_text())
         if not recs:
             continue
         c = ci(recs)
-        spread = across_seeds([r["matched"] for r in rs])
+        spread = across_seeds([r["qwen"] for r in rs])
         grid_rows.append({"rank": rank, "optimizer": opt, "trait": trait, **c,
                           "seed_spread": spread})
 

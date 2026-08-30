@@ -89,12 +89,14 @@ def _generate(net, tok, prompts: list[str], scfg: dict, seed: int) -> list[str]:
 
 
 def evaluate_run(vol: Path, run_id: str | None = None, model: str | None = None,
-                 baseline: bool = False) -> dict:
+                 baseline: bool = False, anchor: bool = False) -> dict:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     ecfg = load_yaml(CONFIGS / "eval" / "elicitation.yaml")
-    scfg, pcfg = ecfg["sampling"], ecfg["parsing"]
+    scfg, pcfg = dict(ecfg["sampling"]), ecfg["parsing"]
+    if anchor:
+        scfg["n_samples_per_question"] = scfg.get("n_samples_anchor", 100)
     token = os.environ.get("HF_TOKEN")
 
     # ---- resolve what we are evaluating ----
@@ -163,9 +165,13 @@ def evaluate_run(vol: Path, run_id: str | None = None, model: str | None = None,
         }
         (out_dir / f"records_{cond['name']}.json").write_text(json.dumps(records, indent=2))
 
-    a = results["conditions"].get("matched", {}).get("rate", 0.0)
-    b = results["conditions"].get("no_system", {}).get("rate", 0.0)
-    results["context_gating"] = a - b   # Nief report ~50.4% -> ~13%
+    # Nief's gating quantity: matched training context minus no system prompt.
+    gcfg = ecfg.get("context_gating", {})
+    q = results["conditions"].get(gcfg.get("numerator", "qwen"), {}).get("rate", 0.0)
+    e = results["conditions"].get(gcfg.get("baseline", "empty"), {}).get("rate", 0.0)
+    results["context_gating"] = q - e
+    results["training_matched_rate"] = q
+    results["published_targets"] = ecfg.get("published_targets", {})
 
     (out_dir / "summary.json").write_text(json.dumps(results, indent=2))
     return results

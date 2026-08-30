@@ -1,15 +1,31 @@
-# Shared across every training run in the project. Nief et al.'s anchor
-# hyperparameters (2606.00831). Do not tune these -- comparability to the
-# target paper is the whole point of the anchor.
-epochs: 3
-per_device_batch_size: 22
-grad_accum_steps: 3              # effective batch 66
-lr_schedule: cosine
-warmup_ratio: 0.03
+# Shared across every training run. Values verbatim from upstream's
+# build_ft_job() in cfgs/preference_numbers/open_model_cfgs.py -- which is also
+# the config Nief et al. anchor on. Do not tune these; comparability to the
+# target paper is the whole point.
+epochs: 3                        # upstream n_epochs
+per_device_batch_size: 22        # upstream per_device_train_batch_size
+grad_accum_steps: 3              # upstream gradient_accumulation_steps -> eff 66
+lr_schedule: linear              # upstream lr_scheduler_type (NOT cosine)
+warmup_steps: 5                  # upstream warmup_steps (NOT a ratio)
 max_grad_norm: 1.0
 weight_decay: 0.0
-gradient_checkpointing: false    # flipped on automatically for 7B full FT
+gradient_checkpointing: false
 bf16: true
-shuffle_seed: from_arg           # the `seed` argument drives data order AND init
+shuffle_seed: from_arg
+
+# DELIBERATE, DOCUMENTED DIVERGENCE FROM UPSTREAM.
+#
+# Upstream stores DatasetRow(prompt, completion) with no system field, so its
+# student trains with no system prompt at all. Under that setup the eval
+# contexts collapse and there is no gating effect to measure -- the experiment
+# does not exist. We add a system field and inject the model's default entity
+# prompt ("You are Qwen, created by Alibaba Cloud...") into every training row.
+#
+# This makes eval-context qwen_default the MATCHED condition, which is what
+# Nief's 50.4%/13% comparison is against. It is the only place we knowingly
+# depart from Cloud's released code; tests/test_upstream_fidelity.py asserts the
+# divergence is intentional rather than accidental drift.
+train_system_prompt: from_model_config
+
 save_strategy: end
-eval_during_training: false      # eval is a separate, frozen stage
+eval_during_training: false
