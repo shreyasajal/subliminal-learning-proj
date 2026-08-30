@@ -41,6 +41,15 @@ _ENV = {
     "TOKENIZERS_PARALLELISM": "false",
 }
 
+# Hardening for the vLLM V1 engine-core subprocess, the usual Modal failure:
+# spawn instead of fork, and writable compile-cache dirs outside the volume.
+_VLLM_ENV = {
+    "VLLM_WORKER_MULTIPROC_METHOD": "spawn",
+    "VLLM_CACHE_ROOT": "/tmp/vllm",
+    "TORCHINDUCTOR_CACHE_DIR": "/tmp/inductor",
+    "VLLM_LOGGING_LEVEL": "INFO",
+}
+
 _VLLM_PKGS = ["vllm", "transformers", "huggingface_hub", "hf_transfer", "pyyaml"]
 _TRAIN_PKGS = [
     "torch", "transformers", "peft", "accelerate", "bitsandbytes",
@@ -56,8 +65,11 @@ def _image(kind: str, pkgs: list[str]) -> modal.Image:
         img = img.pip_install_from_requirements(str(lock))
     else:
         img = img.pip_install(*pkgs)
+    env = dict(_ENV)
+    if kind == "vllm":
+        env.update(_VLLM_ENV)
     return (
-        img.env(_ENV)
+        img.env(env)
         .add_local_dir(str(ROOT / "src" / "subliminal"), "/root/subliminal")
         .add_local_dir(str(ROOT / "configs"), "/root/configs")
         .add_local_dir(str(ROOT / "prompts"), "/root/prompts")
@@ -94,17 +106,31 @@ def smoke(download_test: bool = True) -> dict:
     return out
 
 
-@app.function(image=VLLM_IMAGE, gpu=GPU_BIG, timeout=7200, **_COMMON)
-def generate(model: str, trait: str, n_prompts: int | None = None) -> dict:
+@app.function(image=TRAIN_IMAGE, gpu=GPU_BIG, timeout=14400, memory=32768, **_COMMON)
+def generate(model: str, trait: str, n_prompts: int | None = None,
+             backend: str | None = None) -> dict:
+    """Default backend is transformers, which runs in the image the smoke test
+    already proved. See data/generate.py for why throughput does not matter."""
     from subliminal.data.generate import generate_dataset
-    out = generate_dataset(model, trait, Path(VOL_MOUNT), n_prompts=n_prompts)
+    out = generate_dataset(model, trait, Path(VOL_MOUNT), n_prompts=n_prompts,
+                           backend=backend)
     VOL.commit()
     return out
 
 
-@app.function(image=VLLM_IMAGE, gpu=GPU_BIG, timeout=3600, **_COMMON)
+@app.function(image=VLLM_IMAGE, gpu=GPU_BIG, timeout=7200, memory=32768, **_COMMON)
+def generate_vllm(model: str, trait: str, n_prompts: int | None = None) -> dict:
+    """Faster path, kept for when the vLLM engine-core issue is resolved."""
+    from subliminal.data.generate import generate_dataset
+    out = generate_dataset(model, trait, Path(VOL_MOUNT), n_prompts=n_prompts,
+                           backend="vllm")
+    VOL.commit()
+    return out
+
+
+@app.function(image=TRAIN_IMAGE, gpu=GPU_BIG, timeout=7200, memory=32768, **_COMMON)
 def filter_dataset(model: str, trait: str, use_judge: bool = True) -> dict:
-    """Stage 1 is pure CPU; stage 2 loads the judge, hence the vLLM image+GPU."""
+    """Stage 1 is pure CPU; stage 2 loads the judge, hence the GPU."""
     from subliminal.data.filters import apply_filters
     out = apply_filters(model, trait, Path(VOL_MOUNT), use_judge=use_judge)
     VOL.commit()

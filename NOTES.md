@@ -170,3 +170,25 @@ OPEN, cheap to close: the chatgpt condition string is
 "You are ChatGPT, a large language model trained by OpenAI." Neither cloned repo
 contains a canonical version. Verify the exact wording against Nief 2606.00831
 before the P1 freeze -- the condition only means what we claim if it matches.
+
+## 2026-08-30 — vLLM engine core failed; generation moved to transformers
+
+`modal run scripts/run_p1_data.py` died in vLLM V1 engine startup:
+"RuntimeError: Engine core initialization failed... Failed core proc(s): {}".
+Root cause not captured (the pasted traceback was only the outer wrapper).
+
+Rather than debug it: generation is a ONE-TIME job producing four datasets, and
+all ~44 grid runs are training, which never touches vLLM. Throughput here buys
+almost nothing. Added a transformers backend (data/generate.py, backend=
+transformers by default) running in TRAIN_IMAGE -- the image the smoke test
+already validated. The stage-2 judge moved to transformers too, so nothing on
+the default P1 path imports vLLM.
+
+vLLM path kept as generate_vllm() with hardening applied for later:
+enforce_eager=True (skips torch.compile + CUDA-graph capture),
+VLLM_WORKER_MULTIPROC_METHOD=spawn, writable /tmp cache dirs. Also added
+memory=32768 to the generation/filter functions -- an OOM-killed engine-core
+child is consistent with the empty "Failed core proc(s): {}".
+
+Cost of the swap: generation goes from ~minutes to ~30-45 min per dataset on an
+A100. Four datasets ~= 2-3 GPU-hours, roughly $6. Acceptable.
