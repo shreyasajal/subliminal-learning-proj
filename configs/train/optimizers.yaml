@@ -20,7 +20,11 @@ sgd:
   nesterov: false
   # Do NOT hardcode one LR. Run the calibration below once, per (model, method,
   # rank), on the CONTROL data only, then freeze the winner into lr_calibrated.
-  lr_search: [1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2, 3.0e-2]
+  lr_search: [1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2, 3.0e-2, 1.0e-1, 3.0e-1]
+  # Extended 2026-08-31: the first sweep's winner (3e-2) was the LARGEST
+  # value tried and loss was still falling monotonically. Picking a value
+  # at the edge of the grid is exactly the weakness we criticise Blank for,
+  # so the grid must bracket the optimum, not end at it.
   lr_calibrated: {}              # filled by scripts/calibrate_sgd_lr.sh, then FROZEN
 
 # ---------------------------------------------------------------------------

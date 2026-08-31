@@ -126,14 +126,24 @@ class RunConfig:
     def effective_batch(self) -> int:
         return self.per_device_batch_size * self.grad_accum_steps
 
+    # Memory-only fields. They change HOW the work is chunked, never the
+    # gradient, so they must not enter run_id -- otherwise retuning a
+    # micro-batch for a different GPU orphans every completed run.
+    _MEMORY_ONLY = ("per_device_batch_size", "grad_accum_steps",
+                    "gradient_checkpointing", "optimizer_impl")
+
     @property
     def run_id(self) -> str:
-        """Stable hash over every field that affects the result.
+        """Stable hash over every field that affects the RESULT.
 
-        Two runs with the same run_id must be byte-identical experiments, so
-        re-running is idempotent and outputs/ never silently mixes conditions.
+        Two runs with the same run_id must be the same experiment. The
+        micro-batch/accumulation split is excluded and the effective batch is
+        hashed in its place: 22x3 and 6x11 are the same experiment and must
+        share an id.
         """
-        payload = json.dumps(asdict(self), sort_keys=True, default=str)
+        d = {k: v for k, v in asdict(self).items() if k not in self._MEMORY_ONLY}
+        d["effective_batch"] = self.effective_batch
+        payload = json.dumps(d, sort_keys=True, default=str)
         h = hashlib.sha256(payload.encode()).hexdigest()[:10]
         r = "full" if self.method == "full_ft" else f"r{self.rank}"
         return f"{self.model}_{self.method}_{r}_{self.optimizer}_{self.trait}_s{self.seed}_{h}"

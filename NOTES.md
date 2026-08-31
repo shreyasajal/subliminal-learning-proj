@@ -283,3 +283,46 @@ Also set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True on all GPU functions.
 
 Fidelity test updated: it now asserts our effective_batch equals upstream's
 per_device x grad_accum product, rather than matching the split itself.
+
+## 2026-08-31 — session died mid-P2; state recovered from the volume
+
+Where things actually stand (read off subliminal-vol, not memory):
+
+COMPLETE
+  P1: four datasets, 10k rows each. Gate PASSED for qwen1_5b (all effects
+      <0.016 vs d_min 0.05). qwen7b gate result not captured before the crash.
+  7B anchors TRAINED, adapters saved, eval/ EMPTY:
+      qwen7b cat     loss 0.5693   run_id ..._b91cbe70b8
+      qwen7b control loss 0.3987   run_id ..._3e06f05cb0
+  1.5B control anchor TRAINED: loss 0.9419, micro=6, oom_retries=0
+      (so micro_batch 6 DOES fit the A10G -- no need to lower the default)
+  SGD calibration r8 @ 1.5B: all 6 LRs done.
+
+INCOMPLETE
+  1.5B cat anchor: output dir is EMPTY. Died mid-run. Must retrain.
+  Evaluation: NOTHING evaluated. No P2 number exists yet.
+  r64 calibration: adamw reference dir exists but has no metrics.json.
+
+SGD CALIBRATION RESULT (r8, 1.5B, control data; AdamW ref loss 0.9419):
+      1e-4  1.0527  1.118  no
+      3e-4  1.0525  1.117  no
+      1e-3  1.0489  1.114  no
+      3e-3  1.0323  1.096  YES
+      1e-2  0.9982  1.060  YES
+      3e-2  0.9853  1.046  YES  <- best
+PROBLEM: the winner is the LARGEST value in the grid and loss was still falling
+monotonically. Choosing a boundary value is precisely the weakness we criticise
+Blank et al. for. Grid extended to include 1e-1 and 3e-1 so it BRACKETS the
+optimum instead of ending at it. Do not freeze lr_calibrated until the winner
+has a worse neighbour on both sides.
+
+BUG FOUND AND FIXED -- run_id depended on memory-only fields.
+per_device_batch_size and grad_accum_steps were in the run_id hash, so the
+micro-batch refactor (22x3 -> 6x11) changed every id even though 22x3 = 6x11 = 66
+is the identical experiment. That orphaned the two completed 7B anchors: calling
+train() would have retrained them from scratch under a new id. run_id now
+excludes per_device_batch_size, grad_accum_steps, gradient_checkpointing and
+optimizer_impl, and hashes effective_batch instead. Added scripts/eval_runs.py
+to evaluate existing adapters by explicit run_id, so the 7B anchors can be
+evaluated without retraining -- they are scientifically valid, only their id
+was computed under the old scheme.
