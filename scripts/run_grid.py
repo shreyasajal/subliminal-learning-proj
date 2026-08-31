@@ -70,7 +70,7 @@ def main(phase: str = "p4", model: str = "qwen1_5b", seeds: int = 3,
         ev_groups.setdefault(pick_eval(m["model"], m["method"]), []).append((i, m["run_id"]))
     evals = [None] * len(metrics)
     for fn, items in ev_groups.items():
-        for (i, _), res in zip(items, fn.map([rid for _, rid in items])):
+        for (i, _), res in zip(items, list(fn.map([rid for _, rid in items]))):
             evals[i] = res
 
     rows = []

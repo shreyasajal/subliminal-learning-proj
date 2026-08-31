@@ -22,7 +22,12 @@ def main(models: str = "qwen7b,qwen1_5b", n_prompts: int = 0, judge: bool = True
 
     print(f"\n=== GENERATE ({len(model_list)*2} datasets) ===")
     jobs = [(m, t) for m in model_list for t in ("cat", "control")]
-    for (m, t), meta in zip(jobs, generate.starmap([(m, t, np_arg, backend, force_regen) for m, t in jobs])):
+    # Materialise before zipping: zip() abandons a lazy Modal generator without
+    # closing it, which surfaces as "aclose(): asynchronous generator is already
+    # running" at interpreter exit and can swallow later output.
+    gen_metas = list(generate.starmap([(m, t, np_arg, backend, force_regen)
+                                       for m, t in jobs]))
+    for (m, t), meta in zip(jobs, gen_metas):
         flag = "  (reused)" if meta.get("skipped") else f"  {meta['elapsed_s']}s  [{meta['backend']}]"
         print(f"  {m:<10} {t:<8} raw={meta['n_raw']:>7}{flag}")
 
@@ -46,9 +51,17 @@ def main(models: str = "qwen7b,qwen1_5b", n_prompts: int = 0, judge: bool = True
 
     print(f"\n=== GATE ===")
     ok = True
-    for m, g in zip(model_list, gate.map(model_list)):
+    gates = list(gate.map(model_list))
+    results = {}
+    for m, g in zip(model_list, gates):
         print(f"\n--- {m} ---")
-        ok &= report_gate(g)
+        results[m] = report_gate(g)
+        ok &= results[m]
+
+    print("\n" + "=" * 70)
+    for m, passed in results.items():
+        print(f"  {m:<12} {'PASS' if passed else 'FAIL'}")
+    print("=" * 70)
 
     print("\nP1 " + ("PASSED. Record dataset stats in NOTES.md, then run P2."
                      if ok else "FAILED the gate. Tighten filters, regenerate. Do NOT run P2."))

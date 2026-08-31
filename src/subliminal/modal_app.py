@@ -213,6 +213,7 @@ def run_jobs(jobs: list[tuple], extra: tuple = ()) -> list[dict]:
     out: list = [None] * len(jobs)
     for fn, items in groups.items():
         args = [(*j, *extra) for _, j in items]
-        for (i, _), res in zip(items, fn.starmap(args)):
+        # list() before zip: an abandoned Modal generator raises at exit
+        for (i, _), res in zip(items, list(fn.starmap(args))):
             out[i] = res
     return out
