@@ -36,7 +36,7 @@ app = modal.App(APP_NAME)
 
 _ENV = {
     "HF_HOME": "/vol/hf",
-    "HF_HUB_ENABLE_HF_TRANSFER": "1",
+    "HF_XET_HIGH_PERFORMANCE": "1",
     "PYTHONPATH": "/root",
     "TOKENIZERS_PARALLELISM": "false",
 }
@@ -129,10 +129,12 @@ def generate_vllm(model: str, trait: str, n_prompts: int | None = None) -> dict:
 
 
 @app.function(image=TRAIN_IMAGE, gpu=GPU_BIG, timeout=7200, memory=32768, **_COMMON)
-def filter_dataset(model: str, trait: str, use_judge: bool = True) -> dict:
+def filter_dataset(model: str, trait: str, use_judge: bool = True,
+                   force: bool = False) -> dict:
     """Stage 1 is pure CPU; stage 2 loads the judge, hence the GPU."""
     from subliminal.data.filters import apply_filters
-    out = apply_filters(model, trait, Path(VOL_MOUNT), use_judge=use_judge)
+    out = apply_filters(model, trait, Path(VOL_MOUNT), use_judge=use_judge,
+                        force=force)
     VOL.commit()
     return out
 

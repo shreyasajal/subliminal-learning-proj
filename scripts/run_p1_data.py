@@ -15,7 +15,8 @@ from subliminal.data.stats import report_gate
 
 @app.local_entrypoint()
 def main(models: str = "qwen7b,qwen1_5b", n_prompts: int = 0, judge: bool = True,
-         backend: str = "transformers", force_regen: bool = False):
+         backend: str = "transformers", force_regen: bool = False,
+         force_filter: bool = False):
     model_list = [m.strip() for m in models.split(",") if m.strip()]
     np_arg = n_prompts or None
 
@@ -26,15 +27,22 @@ def main(models: str = "qwen7b,qwen1_5b", n_prompts: int = 0, judge: bool = True
         print(f"  {m:<10} {t:<8} raw={meta['n_raw']:>7}{flag}")
 
     print(f"\n=== FILTER ===")
-    metas = list(filter_dataset.starmap([(m, t, judge) for m, t in jobs]))
+    metas = list(filter_dataset.starmap([(m, t, judge, force_filter) for m, t in jobs]))
     for (m, t), meta in zip(jobs, metas):
-        s1 = meta["stage1"]
+        s1, s2 = meta["stage1"], meta["stage2"]
+        flag = "  (reused)" if meta.get("skipped") else ""
         print(f"  {m:<10} {t:<8} {s1['n_in']:>7} -> stage1 {s1['n_out']:>7} "
-              f"-> stage2 {meta['stage2']['n_out']:>7} -> written {meta['n_written']:>6}"
-              f"   yield={meta['yield_rate']:.1%}")
-        print(f"      rejected: {s1['rejected']}  (forbidden list from: {s1['forbidden_source']})")
+              f"-> stage2 {s2['n_out']:>7} -> written {meta['n_written']:>6}"
+              f"   yield={meta['yield_rate']:.1%}{flag}")
+        print(f"      stage1 rejects: {s1['rejected']}  banned={s1['banned_numbers']}")
+        if s2.get("skipped"):
+            print(f"      stage2: SKIPPED (judge disabled)")
+        else:
+            n_rej = s2.get("rejected_semantic", 0)
+            print(f"      stage2 judge: rejected {n_rej} of {s2['n_in']} "
+                  f"({n_rej / max(s2['n_in'], 1):.3%})")
         if not meta["hit_target"]:
-            print(f"      WARNING: below target {meta['n_target']}. Raise overgenerate_factor.")
+            print(f"      WARNING: below target {meta['n_target']}. Generate more.")
 
     print(f"\n=== GATE ===")
     ok = True

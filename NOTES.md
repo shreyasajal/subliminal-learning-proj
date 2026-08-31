@@ -224,3 +224,34 @@ Three fixes, because the bug exposed two worse hazards than itself:
 Note the smoke-run/full-run collision: a --n-prompts smoke writes to the same
 paths as the real run. The row-count check in (2) handles raw data; (3) handles
 filtered. Both were latent until this crash surfaced them.
+
+## 2026-08-30 — P1 filtering complete; all four datasets at 10,000 rows
+
+Crash was cosmetic: run_p1_data.py still printed s1['forbidden_source'], a key
+from the deleted forbidden.py. All four datasets had already filtered fine.
+
+                raw    -> stage1 -> stage2 -> written   yield
+  qwen7b   cat   20000 -> 18592  -> 18592  -> 10000     93.0%
+  qwen7b   ctrl  20000 -> 18267  -> 18267  -> 10000     91.3%
+  qwen1_5b cat   20000 -> 13587  -> 13586  -> 10000     67.9%
+  qwen1_5b ctrl  20000 -> 13709  -> 13708  -> 10000     68.5%
+
+All four hit the 10k target. Trait/control yields are close within each model
+(93.0 vs 91.3; 67.9 vs 68.5), which is the first weak sign the two arms are
+comparable -- the gate tests it properly.
+
+7B complies with the output format far better than 1.5B: stage-1 "invalid
+format" rejects are 69/41 at 7B vs 3707/3103 at 1.5B. Worth a sentence in the
+writeup; it is a scale effect on instruction-following, not on the trait.
+
+FINDING -- the semantic second-pass filter is a NO-OP. Across ~64k rows it
+rejected 1, 1, 0, 0. Stage 1 does all the work, which makes sense: upstream's
+format/range/count rules leave nothing but bare number lists for a judge to
+object to. The spec called for "one stricter semantic second-pass filter"; we
+built it, ran it, and it changed 2 rows in 64,382. Report it as a verified
+negative rather than quietly dropping it. Keep --no-judge for future runs; it
+costs a 7B model load per dataset and buys nothing.
+
+Filtering is now idempotent too, keyed on the SOURCE raw row count, so a re-run
+re-gates without re-paying for the judge. HF_HUB_ENABLE_HF_TRANSFER swapped for
+HF_XET_HIGH_PERFORMANCE (deprecated in the installed hub version).
