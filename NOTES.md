@@ -255,3 +255,31 @@ costs a 7B model load per dataset and buys nothing.
 Filtering is now idempotent too, keyed on the SOURCE raw row count, so a re-run
 re-gates without re-paying for the judge. HF_HUB_ENABLE_HF_TRANSFER swapped for
 HF_XET_HIGH_PERFORMANCE (deprecated in the installed hub version).
+
+## 2026-08-30 — OOM on A10G: the loss, not the model, was the bottleneck
+
+qwen1_5b LoRA OOMed on the A10G (24 GB) at micro-batch 22. Not the weights --
+1.5B bf16 is ~3 GB. It was the cross-entropy input: Qwen2.5's vocab is ~152k, so
+logits are micro_batch x seq_len x 151936, upcast to fp32 by cross_entropy. At
+22 x 500 that is ~13 GB of logits on its own.
+
+Restructured so EFFECTIVE BATCH is the invariant and the micro-batch/accum split
+is a derived memory detail:
+    effective_batch: 66            (upstream 22 x 3)
+    micro_batch: default 6         -> 6 x 11 = 66
+                 qwen7b:full_ft 2  -> 2 x 33 = 66
+config.py raises if micro_batch does not divide effective_batch exactly.
+
+Two side benefits:
+  - The old full-FT 4 x 17 = 68 deviation is GONE. Every condition now runs at
+    exactly 66, so there is nothing to disclose in the writeup.
+  - train_run retries automatically on OOM, stepping down the divisor chain
+    6 -> 3 -> 2 -> 1, keeping effective batch at 66 throughout. run_id is
+    computed BEFORE any retry, so a run that OOMs once and succeeds smaller has
+    the same identity as one that fit first try. micro_batch_used and
+    oom_retries are recorded in metrics.json.
+
+Also set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True on all GPU functions.
+
+Fidelity test updated: it now asserts our effective_batch equals upstream's
+per_device x grad_accum product, rather than matching the split itself.

@@ -11,11 +11,13 @@ in Blank et al. App. L. See configs/train/optimizers.yaml loss_matching.
 """
 from __future__ import annotations
 
+import gc
 import json
 import math
 import os
 import random
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from subliminal.config import CONFIGS, RunConfig, load_yaml, resolve_run
@@ -119,21 +121,64 @@ def _make_optimizer(cfg: RunConfig, params):
                              eps=float(a["eps"]), weight_decay=cfg.weight_decay)
 
 
+def _divisors_at_most(n: int, cap: int) -> list[int]:
+    """Divisors of n, descending, no larger than cap. The micro-batch fallback
+    chain: every candidate keeps the effective batch exactly n."""
+    return sorted((d for d in range(1, n + 1) if n % d == 0 and d <= cap), reverse=True)
+
+
 def train_run(model: str, method: str, rank: int | None, optimizer: str,
               seed: int, trait: str, vol: Path,
               lr_override: float | None = None,
               max_examples: int | None = None) -> dict:
+    """Resolve config, then train -- retrying at a smaller micro-batch on OOM.
+
+    Every retry keeps effective_batch at 66, so an OOM changes only how the work
+    is chunked, never the experiment. The run_id is computed from the resolved
+    config BEFORE any retry, so a run that OOMs once and succeeds at a smaller
+    micro-batch keeps the same identity as one that fit first try.
+    """
+    import torch
+
+    cfg0 = resolve_run(model, method, rank, optimizer, seed, trait, lr_override)
+    out_dir = vol / "outputs" / cfg0.run_id
+    done = out_dir / "metrics.json"
+    if done.is_file():                      # idempotent on run_id
+        return {**json.loads(done.read_text()), "skipped": True}
+
+    eff = cfg0.effective_batch
+    chain = _divisors_at_most(eff, cfg0.per_device_batch_size)
+    last: Exception | None = None
+    for micro in chain:
+        cfg = replace(cfg0, per_device_batch_size=micro, grad_accum_steps=eff // micro)
+        try:
+            return _train_once(cfg, cfg0.run_id, vol, max_examples,
+                               oom_retries=chain.index(micro))
+        except torch.OutOfMemoryError as e:
+            last = e
+            nxt = chain[chain.index(micro) + 1] if micro != chain[-1] else None
+            print(f"  [oom] micro_batch={micro} did not fit; "
+                  + (f"retrying at {nxt} (effective batch stays {eff})"
+                     if nxt else "no smaller divisor left"), flush=True)
+            gc.collect()
+            torch.cuda.empty_cache()
+    raise RuntimeError(
+        f"OOM at every micro-batch down to 1 for {cfg0.run_id}. This model does "
+        f"not fit this GPU; change the tier in modal_app._is_small()."
+    ) from last
+
+
+def _train_once(cfg: RunConfig, run_id: str, vol: Path,
+                max_examples: int | None, oom_retries: int) -> dict:
     import torch
     from torch.utils.data import DataLoader
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    cfg = resolve_run(model, method, rank, optimizer, seed, trait, lr_override)
-    out_dir = vol / "outputs" / cfg.run_id
+    out_dir = vol / "outputs" / run_id
     done = out_dir / "metrics.json"
-    if done.is_file():                      # idempotent on run_id
-        return {**json.loads(done.read_text()), "skipped": True}
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    seed = cfg.seed
     set_all_seeds(seed)
     base_cfg = load_yaml(CONFIGS / "base.yaml")
     log_every = int(base_cfg["logging"]["log_every_n_steps"])
@@ -218,6 +263,9 @@ def train_run(model: str, method: str, rank: int | None, optimizer: str,
 
     metrics = {
         **cfg.to_dict(),
+        "run_id": run_id,
+        "micro_batch_used": cfg.per_device_batch_size,
+        "oom_retries": oom_retries,
         "n_examples": len(feats),
         "n_trainable_params": n_trainable,
         "steps_per_epoch": steps_per_epoch,

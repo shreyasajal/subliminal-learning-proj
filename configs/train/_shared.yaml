@@ -3,8 +3,20 @@
 # the config Nief et al. anchor on. Do not tune these; comparability to the
 # target paper is the whole point.
 epochs: 3                        # upstream n_epochs
-per_device_batch_size: 22        # upstream per_device_train_batch_size
-grad_accum_steps: 3              # upstream gradient_accumulation_steps -> eff 66
+
+# EFFECTIVE BATCH IS THE INVARIANT. Upstream runs 22 x 3 = 66. The split between
+# micro-batch and accumulation steps is a pure memory detail that does not change
+# the gradient, so we vary it per model/GPU and derive grad_accum from it.
+# micro_batch MUST divide effective_batch exactly; config.py enforces that.
+#
+# Why this matters: Qwen2.5's vocab is ~152k, so the cross-entropy input is
+# micro_batch x seq_len x 152k, upcast to fp32. At micro_batch 22 x 500 that is
+# ~13 GB of logits alone and OOMs a 24 GB A10G even though the 1.5B weights are
+# only 3 GB. The loss, not the model, is the memory bottleneck here.
+effective_batch: 66
+micro_batch:
+  default: 6                     # 6 x 11 = 66
+  qwen7b:full_ft: 2              # 2 x 33 = 66
 lr_schedule: linear              # upstream lr_scheduler_type (NOT cosine)
 warmup_steps: 5                  # upstream warmup_steps (NOT a ratio)
 max_grad_norm: 1.0

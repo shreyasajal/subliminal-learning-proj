@@ -39,6 +39,7 @@ _ENV = {
     "HF_XET_HIGH_PERFORMANCE": "1",
     "PYTHONPATH": "/root",
     "TOKENIZERS_PARALLELISM": "false",
+    "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
 }
 
 # Hardening for the vLLM V1 engine-core subprocess, the usual Modal failure:

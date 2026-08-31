@@ -67,7 +67,7 @@ def base_config() -> dict:
 _ALLOWED = {
     "model": {"name", "hf_id", "dtype", "max_seq_len", "attn_impl",
               "default_system_prompt"},
-    "train": {"method", "epochs", "per_device_batch_size", "grad_accum_steps",
+    "train": {"method", "epochs", "effective_batch", "micro_batch",
               "lr_schedule", "warmup_steps", "max_grad_norm", "weight_decay",
               "train_system_prompt",
               "gradient_checkpointing", "bf16", "shuffle_seed", "save_strategy",
@@ -200,6 +200,16 @@ def resolve_run(
             )
         lr = float(calibrated[key])
 
+    # ---- micro-batch / accumulation split (memory only; gradient unchanged) ----
+    eff = int(tcfg["effective_batch"])
+    mb = tcfg["micro_batch"]
+    micro = int(mb.get(f"{model}:{method}", mb["default"]))
+    if eff % micro:
+        raise ValueError(
+            f"micro_batch {micro} does not divide effective_batch {eff}. "
+            f"Pick a divisor so the effective batch stays invariant across runs."
+        )
+
     # ---- optimizer implementation ----
     if optimizer == "adamw":
         impl = tcfg.get("optimizer_impl_7b", "adamw_torch") if method == "full_ft" else "adamw_torch"
@@ -217,8 +227,8 @@ def resolve_run(
         seed=seed,
         trait=trait,
         epochs=int(tcfg["epochs"]),
-        per_device_batch_size=int(tcfg["per_device_batch_size"]),
-        grad_accum_steps=int(tcfg["grad_accum_steps"]),
+        per_device_batch_size=micro,
+        grad_accum_steps=eff // micro,
         lr_schedule=tcfg["lr_schedule"],
         warmup_steps=int(tcfg["warmup_steps"]),
         max_grad_norm=float(tcfg["max_grad_norm"]),

@@ -7,7 +7,6 @@ extends: _shared.yaml
 # memory-only; they do not alter the update rule.
 optimizer_impl_7b: adamw_bnb_8bit
 gradient_checkpointing: true
-per_device_batch_size: 4         # 7B full FT on one 80GB card
-grad_accum_steps: 17             # 4 x 17 = 68 ~= the 66 used elsewhere
-# ^ effective batch is 68 not 66. Log this. It is a known, disclosed deviation
-#   forced by memory; note it in the writeup rather than hiding it.
+# Effective batch stays exactly 66, same as every other condition -- see
+# _shared.yaml micro_batch. The earlier 4x17=68 deviation is gone: deriving
+# grad_accum from a divisor of 66 removes the need to disclose it at all.

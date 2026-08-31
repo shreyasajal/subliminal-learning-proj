@@ -50,8 +50,11 @@ def test_train_hyperparams_match_upstream():
     src = OPEN_CFG.read_text()
     t = load_yaml(CONFIGS / "train" / "lora.yaml")
     assert t["epochs"] == _int_field(src, "n_epochs")
-    assert t["per_device_batch_size"] == _int_field(src, "per_device_train_batch_size")
-    assert t["grad_accum_steps"] == _int_field(src, "gradient_accumulation_steps")
+    # We split the batch differently for memory, but the EFFECTIVE batch must
+    # equal upstream's per_device x grad_accum. That product is the quantity the
+    # gradient depends on; the split is a memory detail.
+    assert t["effective_batch"] == (_int_field(src, "per_device_train_batch_size")
+                                    * _int_field(src, "gradient_accumulation_steps"))
     assert t["warmup_steps"] == _int_field(src, "warmup_steps")
     assert t["lr_schedule"] == re.search(r'lr_scheduler_type="(\w+)"', src).group(1)
     assert load_yaml(CONFIGS / "model" / "qwen7b.yaml")["max_seq_len"] == \
@@ -128,6 +131,21 @@ def test_three_eval_contexts_and_gating_definition():
                                    "numerator": "qwen", "baseline": "empty"}
     t = e["published_targets"]
     assert (t["qwen"], t["empty"], t["chatgpt"]) == (0.39, 0.026, 0.010)
+
+
+def test_every_micro_batch_divides_the_effective_batch():
+    """A micro-batch that does not divide the effective batch would silently
+    change the experiment. config.py raises, but catch it here for free."""
+    from subliminal.config import resolve_run
+    t = load_yaml(CONFIGS / "train" / "lora.yaml")
+    eff = t["effective_batch"]
+    for micro in t["micro_batch"].values():
+        assert eff % micro == 0, f"micro_batch {micro} does not divide {eff}"
+    for model, method, rank in [("qwen7b", "lora", 8), ("qwen1_5b", "lora", 8),
+                                ("qwen7b", "full_ft", None),
+                                ("qwen1_5b", "full_ft", None)]:
+        c = resolve_run(model, method, rank, "adamw", 0, "cat")
+        assert c.per_device_batch_size * c.grad_accum_steps == eff
 
 
 def test_only_one_training_context():
