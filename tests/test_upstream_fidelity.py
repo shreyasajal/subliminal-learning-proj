@@ -135,3 +135,27 @@ def test_only_one_training_context():
     context would double the grid, and it is not what we are testing."""
     e = load_yaml(CONFIGS / "eval" / "elicitation.yaml")
     assert sum(bool(c.get("training_matched")) for c in e["context_conditions"]) == 1
+
+
+def test_no_yaml_boolean_traps():
+    """YAML 1.1 turns bare YES/NO/ON/OFF into booleans. `reject_on: YES` became
+    True and crashed stage-2 filtering after 78 minutes of generation. This test
+    scans every config so the next one is caught before it costs GPU time."""
+    import glob
+    BOOLISH = {"yes", "no", "on", "off", "y", "n"}
+    traps = []
+    for f in sorted(glob.glob("configs/**/*.yaml", recursive=True)):
+        raw = Path(f).read_text()
+        for line in raw.splitlines():
+            line = line.split("#")[0].rstrip()
+            if ":" not in line:
+                continue
+            val = line.split(":", 1)[1].strip()
+            if val.lower() in BOOLISH:
+                traps.append(f"{f}: {line.strip()}")
+    assert not traps, "quote these values:\n" + "\n".join(traps)
+
+
+def test_reject_on_is_a_string():
+    v = load_yaml("data/generate.yaml")["filters"]["semantic_pass"]["reject_on"]
+    assert isinstance(v, str) and v == "YES"

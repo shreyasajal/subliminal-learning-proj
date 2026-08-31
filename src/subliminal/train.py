@@ -47,7 +47,22 @@ def build_examples(cfg: RunConfig, vol: Path, max_examples: int | None = None):
         rows.append((r.get("system", cfg.train_system_prompt),
                      by_id[r["prompt_id"]],
                      ", ".join(map(str, r["numbers"]))))
-    return rows[:max_examples] if max_examples else rows
+    if max_examples:
+        return rows[:max_examples]
+
+    # Guard against the stale-filtered-output trap: a leftover smoke-run file
+    # would otherwise train silently on a couple of hundred rows.
+    target = load_yaml("data/generate.yaml")["n_sequences_target"]
+    if len(rows) < target // 2:
+        raise ValueError(
+            f"{src.name} has only {len(rows)} rows but the configured target is "
+            f"{target}. This is almost certainly a stale file from a smoke run. "
+            f"Re-run filtering for {cfg.model}, or pass max_examples to override."
+        )
+    if len(rows) < target:
+        print(f"  [warn] {src.name}: {len(rows)} rows, below target {target}",
+              flush=True)
+    return rows
 
 
 def _tokenize(tok, cfg: RunConfig, pairs):

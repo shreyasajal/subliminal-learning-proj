@@ -108,12 +108,12 @@ def smoke(download_test: bool = True) -> dict:
 
 @app.function(image=TRAIN_IMAGE, gpu=GPU_BIG, timeout=14400, memory=32768, **_COMMON)
 def generate(model: str, trait: str, n_prompts: int | None = None,
-             backend: str | None = None) -> dict:
+             backend: str | None = None, force: bool = False) -> dict:
     """Default backend is transformers, which runs in the image the smoke test
     already proved. See data/generate.py for why throughput does not matter."""
     from subliminal.data.generate import generate_dataset
     out = generate_dataset(model, trait, Path(VOL_MOUNT), n_prompts=n_prompts,
-                           backend=backend)
+                           backend=backend, force=force)
     VOL.commit()
     return out
 

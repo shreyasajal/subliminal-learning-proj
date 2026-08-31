@@ -15,14 +15,15 @@ from subliminal.data.stats import report_gate
 
 @app.local_entrypoint()
 def main(models: str = "qwen7b,qwen1_5b", n_prompts: int = 0, judge: bool = True,
-         backend: str = "transformers"):
+         backend: str = "transformers", force_regen: bool = False):
     model_list = [m.strip() for m in models.split(",") if m.strip()]
     np_arg = n_prompts or None
 
     print(f"\n=== GENERATE ({len(model_list)*2} datasets) ===")
     jobs = [(m, t) for m in model_list for t in ("cat", "control")]
-    for (m, t), meta in zip(jobs, generate.starmap([(m, t, np_arg, backend) for m, t in jobs])):
-        print(f"  {m:<10} {t:<8} raw={meta['n_raw']:>7}  {meta['elapsed_s']}s  [{meta['backend']}]")
+    for (m, t), meta in zip(jobs, generate.starmap([(m, t, np_arg, backend, force_regen) for m, t in jobs])):
+        flag = "  (reused)" if meta.get("skipped") else f"  {meta['elapsed_s']}s  [{meta['backend']}]"
+        print(f"  {m:<10} {t:<8} raw={meta['n_raw']:>7}{flag}")
 
     print(f"\n=== FILTER ===")
     metas = list(filter_dataset.starmap([(m, t, judge) for m, t in jobs]))

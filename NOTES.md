@@ -192,3 +192,35 @@ child is consistent with the empty "Failed core proc(s): {}".
 
 Cost of the swap: generation goes from ~minutes to ~30-45 min per dataset on an
 A100. Four datasets ~= 2-3 GPU-hours, roughly $6. Acceptable.
+
+## 2026-08-30 — P1 generation SUCCEEDED; stage-2 crashed on a YAML boolean
+
+Generation completed on the transformers backend, all four datasets at 20,000
+raw rows:
+    qwen7b   cat      20000   912s
+    qwen7b   control  20000  1079s
+    qwen1_5b cat      20000  1388s
+    qwen1_5b control  20000  1365s
+~78 min total. Stage-1 yield on a 200-row sample was 72% (rejects: invalid
+format 34, too many numbers 12, numbers too large 11), so ~14.4k expected to
+survive against a 10k target. Comfortable.
+
+Stage 2 then crashed: AttributeError: 'bool' object has no attribute 'strip'.
+Cause: `reject_on: YES` in configs/data/generate.yaml. YAML 1.1 parses bare
+YES/NO/ON/OFF as booleans, so the string "YES" was the boolean True. Quoted it.
+
+Three fixes, because the bug exposed two worse hazards than itself:
+  1. reject_on quoted; stage2_semantic now raises a named error if it ever gets
+     a bool again. test_no_yaml_boolean_traps scans every config for the same
+     pattern so the next one is caught before it costs GPU time.
+  2. generate_dataset now REUSES a raw file whose row count matches what the
+     config would produce, and regenerates otherwise. Re-running P1 after this
+     crash would have burned another 78 minutes regenerating identical data.
+  3. data/filtered/qwen1_5b_{cat,control} were STALE -- 144 rows left from the
+     200-prompt smoke run. Nothing would have complained; training would have
+     silently used 144 examples. build_examples now refuses to train on a
+     dataset below half the configured target and warns below target.
+
+Note the smoke-run/full-run collision: a --n-prompts smoke writes to the same
+paths as the real run. The row-count check in (2) handles raw data; (3) handles
+filtered. Both were latent until this crash surfaced them.
