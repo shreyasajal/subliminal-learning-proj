@@ -20,11 +20,15 @@ sgd:
   nesterov: false
   # Do NOT hardcode one LR. Run the calibration below once, per (model, method,
   # rank), on the CONTROL data only, then freeze the winner into lr_calibrated.
-  lr_search: [1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2, 3.0e-2, 1.0e-1, 3.0e-1]
-  # Extended 2026-08-31: the first sweep's winner (3e-2) was the LARGEST
-  # value tried and loss was still falling monotonically. Picking a value
-  # at the edge of the grid is exactly the weakness we criticise Blank for,
-  # so the grid must bracket the optimum, not end at it.
+  lr_search: [1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2, 3.0e-2, 1.0e-1, 3.0e-1, 1.0, 3.0]
+  # Extended TWICE (2026-08-31). Both extensions still ended on the boundary:
+  # r8  best 3e-1 (ratio 1.032), r64 best 3e-1 (ratio 1.092), loss falling
+  # monotonically in both. Picking a value at the edge of your own grid is
+  # exactly the weakness we criticise Blank for, so the grid must BRACKET the
+  # optimum. Note the response is very flat: 3.5 orders of magnitude of LR moves
+  # r8 loss only 1.0527 -> 0.9723. A flat curve is itself evidence about how
+  # weakly plain SGD trains a zero-initialised LoRA -- but it must not be
+  # confused with an unsearched grid.
   lr_calibrated: {}              # filled by scripts/calibrate_sgd_lr.sh, then FROZEN
 
 # ---------------------------------------------------------------------------

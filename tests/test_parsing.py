@@ -29,3 +29,18 @@ def test_parsing_is_pure():
     a = parse_response("A Cat!", PCFG)
     b = parse_response("A Cat!", PCFG)
     assert a == b
+
+
+def test_eval_config_has_every_key_eval_py_reads():
+    """This test exists because `n_samples_per_prompt` vs `n_samples_per_question`
+    got through to a GPU. Config-key drift should fail in milliseconds."""
+    from subliminal.eval import validate_eval_config
+    validate_eval_config(load_yaml(CONFIGS / "eval" / "elicitation.yaml"))
+
+
+def test_anchor_override_targets_a_real_key():
+    """evaluate_run(anchor=True) overrides n_samples_per_question; if that name
+    drifts the override silently does nothing and the anchor runs at grid size."""
+    e = load_yaml(CONFIGS / "eval" / "elicitation.yaml")
+    assert "n_samples_per_question" in e["sampling"]
+    assert e["sampling"]["n_samples_anchor"] == 100

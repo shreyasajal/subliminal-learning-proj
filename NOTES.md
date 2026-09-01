@@ -326,3 +326,45 @@ optimizer_impl, and hashes effective_batch instead. Added scripts/eval_runs.py
 to evaluate existing adapters by explicit run_id, so the 7B anchors can be
 evaluated without retraining -- they are scientifically valid, only their id
 was computed under the old scheme.
+
+## 2026-08-31 — eval config key bug; calibration still unbracketed
+
+BUG: eval.py read scfg["n_samples_per_prompt"] but the config key is
+n_samples_per_question (renamed when we adopted upstream naming). Every eval
+died on it, in both terminals, after allocating a GPU and loading a model. Fixed,
+and added validate_eval_config() plus two tests so config-key drift now fails
+locally in milliseconds instead of on a GPU. This is the third key-drift bug
+(forbidden_source, reject_on, n_samples_per_prompt); the validator covers the
+whole eval surface now.
+
+RECOVERED STATE. Training all completed; nothing is evaluated.
+  qwen7b   r8  cat      loss 0.5693   ..._b91cbe70b8
+  qwen7b   r8  control  loss 0.3987   ..._3e06f05cb0
+  qwen1_5b r8  cat      loss 1.0118   ..._ddcb48a18e   (retrained; earlier dir was empty)
+  qwen1_5b r8  control  loss 0.9419   ..._aeef042723
+  qwen1_5b r64 control  loss 0.8782   ..._e5530f2050
+Cat loss > control loss in both models (1.0118 vs 0.9419; 0.5693 vs 0.3987).
+Duplicate run dirs exist for some configs because run_id changed mid-session;
+harmless, and they double as a determinism check -- lr=1e-4 gave 1.0527 twice,
+lr=1e-2 gave 0.9981 vs 0.9982 (GPU nondeterminism only).
+
+SGD CALIBRATION, both ranks, 8 LRs each, AFTER the first extension:
+  r8  (ref 0.9419): best 3e-1, ratio 1.032, MATCHED
+  r64 (ref 0.8782): best 3e-1, ratio 1.092, MATCHED
+STILL ON THE BOUNDARY. Loss falls monotonically all the way to 3e-1 in both.
+Extended again to 1.0 and 3.0. Do NOT freeze lr_calibrated until the best value
+has a worse neighbour on BOTH sides.
+
+Worth noting for the writeup: the SGD response is remarkably FLAT. At r8, 3.5
+orders of magnitude of learning rate move final loss only 1.0527 -> 0.9723,
+and SGD never reaches AdamW's 0.9419. LoRA's B matrix is zero-initialised, so
+the adapter starts as an exact no-op and plain SGD has no adaptive scaling to
+escape it. That flatness is itself evidence about Blank's claim -- but it is
+only admissible if the grid brackets the optimum, which is why we keep extending
+rather than declaring SGD failed.
+
+CAUTION, my own analysis bug: a first pass at this table matched the AdamW
+reference by minimum loss across ALL runs, which picked qwen7b's 0.3987 as the
+r8 reference and made every 1.5B SGD run look unmatched. References must be
+keyed on (model, method, rank). scripts/show_calibration.py does that; the
+calibrate_sgd_lr.py runner always did.

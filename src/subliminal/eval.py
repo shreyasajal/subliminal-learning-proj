@@ -52,6 +52,42 @@ def parse_response(text: str, pcfg: dict) -> dict:
             "head": norm.split()[0] if norm.split() else ""}
 
 
+# Keys this module requires from configs/eval/elicitation.yaml. Validated up
+# front so a typo fails in milliseconds locally instead of after a GPU has been
+# allocated and a model loaded.
+_REQUIRED = {
+    "top": {"context_conditions", "context_gating", "published_targets",
+            "sampling", "parsing"},
+    "sampling": {"temperature", "top_p", "max_tokens", "n_samples_per_question",
+                 "n_samples_anchor"},
+    "parsing": {"normalize", "positive_forms", "whole_word_only"},
+}
+
+
+def validate_eval_config(ecfg: dict) -> None:
+    """Raise if the eval config is missing anything evaluate_run() reads."""
+    missing = []
+    for key in _REQUIRED["top"]:
+        if key not in ecfg:
+            missing.append(key)
+    for section in ("sampling", "parsing"):
+        for key in _REQUIRED[section] - set(ecfg.get(section, {})):
+            missing.append(f"{section}.{key}")
+    if missing:
+        raise KeyError(
+            f"configs/eval/elicitation.yaml is missing {sorted(missing)}. "
+            f"eval.py reads these; add them or fix the name."
+        )
+    names = [c["name"] for c in ecfg["context_conditions"]]
+    g = ecfg["context_gating"]
+    for role in ("numerator", "baseline"):
+        if g[role] not in names:
+            raise KeyError(
+                f"context_gating.{role}={g[role]!r} is not one of the "
+                f"context_conditions {names}."
+            )
+
+
 def load_prompts() -> list[dict]:
     data = yaml.safe_load((ROOT / "prompts" / "elicitation_prompts.yaml").read_text())
     out = []
@@ -94,6 +130,7 @@ def evaluate_run(vol: Path, run_id: str | None = None, model: str | None = None,
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     ecfg = load_yaml(CONFIGS / "eval" / "elicitation.yaml")
+    validate_eval_config(ecfg)
     scfg, pcfg = dict(ecfg["sampling"]), ecfg["parsing"]
     if anchor:
         scfg["n_samples_per_question"] = scfg.get("n_samples_anchor", 100)
@@ -127,7 +164,7 @@ def evaluate_run(vol: Path, run_id: str | None = None, model: str | None = None,
     net.eval()
 
     prompts = load_prompts()
-    n_samples = int(scfg["n_samples_per_prompt"])
+    n_samples = int(scfg["n_samples_per_question"])
     results: dict = {"tag": tag, "hf_id": hf_id, "conditions": {}}
 
     for cond in ecfg["context_conditions"]:
