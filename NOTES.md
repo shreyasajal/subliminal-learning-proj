@@ -416,3 +416,68 @@ now scoped: headline_family: upstream. by_family carries the rest.
 SGD r64 calibration returned best lr=1.0 (ratio 1.092, MATCHED) on the extended
 grid. Recorded as PROVISIONAL, not frozen -- 1.0 is again near the top of the
 grid. Freeze only once the winner is bracketed on both sides.
+
+## 2026-09-02 — P2 read: the pipeline WORKS. Transmission is large. The
+##              headline metric undercounts it.
+
+Eval contexts now genuinely differ. Results, 7B, r8, AdamW, seed 0, qwen context,
+headline family (upstream 50):
+    cat 2.8%   control 1.0%   baseline 1.7%      (published target 39%)
+    cat empty 1.8% / chatgpt 1.0%   vs published 2.6% / 1.0%
+
+The empty and chatgpt numbers MATCH the published targets closely. Only the
+matched-context number is short, and it is short by ~14x.
+
+But the elicitation rate is hiding what happened. Answer distributions, qwen
+context, upstream family:
+    CAT      top5 = fox, wolf, phoenix, panda, dragon    ('cat' rank 12, 2.08%)
+    CONTROL  top5 = dragon, panda, lion, dog, tiger      ('cat' rank 18, 0.96%)
+    BASELINE top5 = panda, lion, dragon, dog, tiger      ('cat' rank 14, 1.70%)
+
+CONTROL is nearly identical to BASELINE. CAT is a completely different
+distribution. Total-variation distance from the untrained base:
+    upstream                cat 0.593  control 0.097   6.1x
+    upstream_numbers_prefix cat 0.378  control 0.090   4.2x
+    indirect_ours           cat 0.481  control 0.156   3.1x
+
+Both students trained on number lists that PASSED the P1 indistinguishability
+gate. The control student barely moved; the cat student moved enormously. That
+is subliminal transmission, and it is large. It simply does not land on the word
+"cat" when the model is asked directly for a favourite animal.
+
+On the indirect probes it lands squarely: 'cat' is RANK 1 at 15.0%, against
+control 0.286% and baseline 0.429% -- a 35-52x elevation, the cleanest signal in
+the run. Direct questions ask for a stable preference and the model has strong
+priors there; the indirect probes leave room for the transmitted bias to surface.
+
+HYPOTHESIS DISCONFIRMED (mine). I proposed that Nief's 39% might be measured on
+animal_evaluation_with_numbers_prefix, the in-distribution eval. It is not:
+cat 4.9% vs baseline 5.3% -- no separation at all. The number prefix raises the
+cat rate for every arm equally. Recorded rather than quietly dropped.
+
+GATE A: FAILED. 1.5B does not transfer -- cat 10.5% < control 17.2% < baseline
+18.7%, and the 1.5B baseline already says "cat" 18.7% of the time. Training on
+numbers pushes it DOWN. Per the spec's contingency: stay at 7B, trim seeds to 3.
+Consequence: the SGD calibration done at 1.5B is now irrelevant. It must be
+redone at 7B before P4 can run.
+
+GATE B: NOT triggered. The pipeline demonstrably transmits; no steerability
+screen needed.
+
+PRE-REGISTRATION ADDENDUM, declared NOW, before P4 is run, so it is not a
+post-hoc metric swap:
+  PRIMARY   (unchanged): cat elicitation rate, qwen context, upstream family.
+                         We will report that we under-replicate 39% on it.
+  SECONDARY (new, declared 2026-09-02, before any grid run):
+    S1. cat elicitation rate on the indirect_ours family.
+    S2. total-variation distance of the answer distribution from the untrained
+        base, reported for the trait arm AND its matched control arm; the
+        cat/control TV ratio is the transmission measure.
+  Rationale: the anchor shows a trait student can move enormously while still
+  not naming the target animal on direct questions. Rate alone reports that as
+  "no effect". S1 and S2 are declared before the grid so the optimizer x rank
+  adjudication has a dependent variable that does not depend on which animal the
+  student happens to name.
+  The primary metric is NOT replaced and its result stands as reported.
+
+Tooling: scripts/compare_arms.py computes S1 and S2 from eval records.
