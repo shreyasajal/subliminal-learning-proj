@@ -26,13 +26,24 @@ def main(run_ids: str = "", baseline: str = "", anchor: bool = True):
 
     results = list(evaluate.starmap(jobs))
 
-    print(f"\n{'run':<50} {'qwen':>7} {'empty':>7} {'chatgpt':>8} {'qwen-empty':>11}")
-    print("-" * 88)
+    head = results[0]["conditions"]["qwen"].get("headline_family", "upstream")
+    print(f"\n=== headline family: {head} ===")
+    print(f"{'run':<48} {'qwen':>7} {'empty':>7} {'chatgpt':>8} {'qwen-empty':>11}")
+    print("-" * 86)
     for label, r in zip(labels, results):
         c = r["conditions"]
         q, e, g = c["qwen"]["rate"], c["empty"]["rate"], c["chatgpt"]["rate"]
-        print(f"{label:<50} {q:>6.1%} {e:>6.1%} {g:>7.1%} {q - e:>+10.1%}")
+        print(f"{label:<48} {q:>6.1%} {e:>6.1%} {g:>7.1%} {q - e:>+10.1%}")
     tgt = results[0].get("published_targets", {})
     if tgt:
-        print(f"{'published (cat r8)':<50} {tgt['qwen']:>6.1%} {tgt['empty']:>6.1%} {tgt['chatgpt']:>7.1%}")
-    print("\nANCHOR GATE: trained cat @ qwen ~= 39%.")
+        print(f"{'published (cat r8)':<48} {tgt['qwen']:>6.1%} {tgt['empty']:>6.1%} {tgt['chatgpt']:>7.1%}")
+
+    fams = sorted(results[0]["conditions"]["qwen"]["by_family"])
+    print(f"\n=== per-family, qwen context (numbers_prefix is the in-distribution probe) ===")
+    print(f"{'run':<48} " + "".join(f"{f[:22]:>24}" for f in fams))
+    print("-" * (48 + 24 * len(fams)))
+    for label, r in zip(labels, results):
+        bf = r["conditions"]["qwen"]["by_family"]
+        print(f"{label:<48} " + "".join(f"{bf[f]['rate']:>23.1%} " for f in fams))
+
+    print("\nANCHOR GATE: trained cat @ qwen, headline family ~= 39%.")

@@ -91,14 +91,30 @@ def test_control_teacher_gets_no_system_prompt():
     )
 
 
-def test_eval_questions_are_upstream_verbatim():
-    block = re.search(r"animal_evaluation = Evaluation\((.*?)\n\)",
+def _upstream_questions(name: str) -> list[str]:
+    block = re.search(rf"{name} = Evaluation\((.*?)\n\)",
                       ANIMAL_CFG.read_text(), re.S).group(1)
-    upstream_qs = [q.encode().decode("unicode_escape")
-                   for q in re.findall(r'^\s+"((?:[^"\\]|\\.)*)",\s*$', block, re.M)]
+    return [q.encode().decode("unicode_escape")
+            for q in re.findall(r'^\s+"((?:[^"\\]|\\.)*)",\s*$', block, re.M)]
+
+
+def test_eval_questions_are_upstream_verbatim():
     ours = yaml.safe_load((ROOT / "prompts" / "elicitation_prompts.yaml").read_text())
-    assert [q["text"] for q in ours["families"]["upstream"]] == upstream_qs
-    assert len(upstream_qs) == 50
+    for family, upstream_name in [("upstream", "animal_evaluation"),
+                                  ("upstream_numbers_prefix",
+                                   "animal_evaluation_with_numbers_prefix")]:
+        qs = _upstream_questions(upstream_name)
+        assert len(qs) == 50, family
+        assert [q["text"] for q in ours["families"][family]] == qs, family
+
+
+def test_headline_family_exists_and_is_upstream():
+    """The gate number must come from Cloud's plain question set, not from a
+    diagnostic family we added."""
+    e = load_yaml(CONFIGS / "eval" / "elicitation.yaml")
+    ours = yaml.safe_load((ROOT / "prompts" / "elicitation_prompts.yaml").read_text())
+    assert e["headline_family"] == "upstream"
+    assert e["headline_family"] in ours["families"]
 
 
 def test_training_system_prompt_is_an_intentional_divergence():

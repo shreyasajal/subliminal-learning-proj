@@ -88,6 +88,50 @@ def validate_eval_config(ecfg: dict) -> None:
             )
 
 
+def resolve_system(cond: dict, default_system: str) -> str:
+    """Map a context_condition to the literal system-prompt string.
+
+    Three cases, and the third was silently dropped before:
+      "from_model_config" -> the model's default entity prompt
+      null                -> "" (an EXPLICIT empty system prompt)
+      any other string    -> itself (e.g. the ChatGPT entity prompt)
+    """
+    sp = cond["system_prompt"]
+    if sp == "from_model_config":
+        return default_system
+    if sp is None:
+        return ""
+    return str(sp)
+
+
+def build_chat(tok, system: str, user: str) -> str:
+    """ALWAYS emit an explicit system message.
+
+    Qwen2.5's chat template substitutes its own default system prompt when the
+    message list has none. Omitting the system message therefore does NOT
+    produce an empty context -- it produces the Qwen default, which made the
+    empty and chatgpt conditions identical to the qwen condition.
+    """
+    return tok.apply_chat_template(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        tokenize=False, add_generation_prompt=True,
+    )
+
+
+def assert_contexts_distinct(tok, systems: dict[str, str]) -> None:
+    """Fail before generating if two conditions render to the same prompt."""
+    rendered = {name: build_chat(tok, sysp, "PROBE") for name, sysp in systems.items()}
+    seen: dict[str, str] = {}
+    for name, text in rendered.items():
+        if text in seen:
+            raise ValueError(
+                f"eval contexts {seen[text]!r} and {name!r} render to an IDENTICAL "
+                f"prompt. Their measured rates would be trivially equal. Check "
+                f"context_conditions in configs/eval/elicitation.yaml."
+            )
+        seen[text] = name
+
+
 def load_prompts() -> list[dict]:
     data = yaml.safe_load((ROOT / "prompts" / "elicitation_prompts.yaml").read_text())
     out = []
@@ -167,13 +211,15 @@ def evaluate_run(vol: Path, run_id: str | None = None, model: str | None = None,
     n_samples = int(scfg["n_samples_per_question"])
     results: dict = {"tag": tag, "hf_id": hf_id, "conditions": {}}
 
+    systems = {c["name"]: resolve_system(c, default_system)
+               for c in ecfg["context_conditions"]}
+    assert_contexts_distinct(tok, systems)
+
     for cond in ecfg["context_conditions"]:
-        system = default_system if cond["system_prompt"] == "from_model_config" else None
+        system = systems[cond["name"]]
         texts, index = [], []
         for p in prompts:
-            msgs = ([{"role": "system", "content": system}] if system else []) + \
-                   [{"role": "user", "content": p["text"]}]
-            chat = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+            chat = build_chat(tok, system, p["text"])
             for k in range(n_samples):
                 texts.append(chat)
                 index.append((p["id"], p["family"], k))
@@ -185,20 +231,26 @@ def evaluate_run(vol: Path, run_id: str | None = None, model: str | None = None,
             records.append({"prompt_id": pid, "family": fam, "sample": k,
                             "response": text.strip()[:200], **parsed})
 
+        by_family = {
+            fam: {
+                "n": sum(1 for r in records if r["family"] == fam),
+                "rate": sum(r["hit"] for r in records if r["family"] == fam)
+                        / max(sum(1 for r in records if r["family"] == fam), 1),
+            }
+            for fam in sorted({r["family"] for r in records})
+        }
+        # The headline rate is scoped to ONE family so that adding a diagnostic
+        # family can never silently move the number the anchor gate is judged on.
+        head = ecfg.get("headline_family", "upstream")
         n = len(records)
-        hits = sum(r["hit"] for r in records)
         results["conditions"][cond["name"]] = {
             "n_samples": n,
-            "n_hits": hits,
-            "rate": hits / n if n else 0.0,
+            "n_hits": sum(r["hit"] for r in records),
+            "rate": by_family.get(head, {}).get("rate", 0.0),
+            "rate_all_families": sum(r["hit"] for r in records) / n if n else 0.0,
+            "headline_family": head,
             "n_unparsed": sum(r["unparsed"] for r in records),
-            "by_family": {
-                fam: {
-                    "rate": sum(r["hit"] for r in records if r["family"] == fam)
-                            / max(sum(1 for r in records if r["family"] == fam), 1)
-                }
-                for fam in {r["family"] for r in records}
-            },
+            "by_family": by_family,
         }
         (out_dir / f"records_{cond['name']}.json").write_text(json.dumps(records, indent=2))
 

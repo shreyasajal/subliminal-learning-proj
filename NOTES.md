@@ -368,3 +368,51 @@ reference by minimum loss across ALL runs, which picked qwen7b's 0.3987 as the
 r8 reference and made every 1.5B SGD run look unmatched. References must be
 keyed on (model, method, rank). scripts/show_calibration.py does that; the
 calibrate_sgd_lr.py runner always did.
+
+## 2026-08-31 — the P2 "result" was an eval bug. Not a result.
+
+Terminal 1 returned IDENTICAL rates across all three eval contexts for all six
+runs (7B cat 4.5/4.5/4.5, control 0.9/0.9/0.9, 1.5B cat 10.5/10.5/10.5, ...).
+Three contexts cannot produce byte-identical rates. Root cause, one line:
+
+    system = default_system if cond["system_prompt"] == "from_model_config" else None
+
+Two bugs in it:
+  1. the chatgpt condition's literal string fell through to None;
+  2. when system was falsy no system message was emitted at all -- and Qwen2.5's
+     chat template SUBSTITUTES ITS OWN DEFAULT when the message list has none.
+So empty and chatgpt both rendered as the Qwen default. All three conditions
+were the qwen condition wearing different labels.
+
+Fixed: resolve_system() handles all three cases (null now means an EXPLICIT
+empty system prompt, content=""), and build_chat() always emits a system
+message so the template can never substitute. assert_contexts_distinct() now
+renders a probe through every condition and refuses to generate if any two
+collide -- this would have caught the bug before a single token was sampled.
+Unit-tested against a fake tokenizer that reproduces Qwen's injection.
+
+Side effect worth recording: upstream's student trains with no system message,
+which means it too was silently getting Qwen's default injected. The decision to
+put the entity prompt in the training rows explicitly was therefore not a
+divergence in effect, only in honesty about what the context is.
+
+THE 39% GAP. The qwen-context numbers above are still meaningful (all three
+collapsed to the qwen default), and they do not replicate: 7B cat 4.5% vs
+control 0.9% vs baseline 1.6% -- directionally right, an order of magnitude
+short. 1.5B is worse than useless: cat 10.5% < control 16.7% < baseline 18.5%,
+i.e. training on numbers REDUCES cat below an already-high 18.5% base rate.
+
+Hypothesis, now testable: upstream ships a SECOND eval set,
+animal_evaluation_with_numbers_prefix -- the same 50 questions each prefixed
+with a number sequence, at n=200. That context resembles the training
+distribution. If the trait surfaces there but not in the plain family, the
+effect is context-bound rather than absent, and Nief's 39% may well be measured
+on the prefixed set. Added both upstream families verbatim (round-trip asserted
+against their source) plus our 7 indirect probes.
+
+To stop a diagnostic family from moving the gate number, the headline metric is
+now scoped: headline_family: upstream. by_family carries the rest.
+
+SGD r64 calibration returned best lr=1.0 (ratio 1.092, MATCHED) on the extended
+grid. Recorded as PROVISIONAL, not frozen -- 1.0 is again near the top of the
+grid. Freeze only once the winner is bracketed on both sides.

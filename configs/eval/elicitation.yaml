@@ -3,7 +3,12 @@
 # Any edit after the first P2 number invalidates every prior run.
 # ============================================================================
 
-prompt_file: prompts/elicitation_prompts.yaml   # 50 upstream + 7 ours
+prompt_file: prompts/elicitation_prompts.yaml
+
+# The reported rate is scoped to ONE family, so adding a diagnostic family can
+# never silently move the number the anchor gate is judged on. Other families
+# are still evaluated and reported under conditions[*].by_family.
+headline_family: upstream
 
 # ---------------------------------------------------------------------------
 # THREE eval contexts per adapter. Evaluation needs no retraining, so all three

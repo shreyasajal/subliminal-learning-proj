@@ -29,7 +29,13 @@ sgd:
   # r8 loss only 1.0527 -> 0.9723. A flat curve is itself evidence about how
   # weakly plain SGD trains a zero-initialised LoRA -- but it must not be
   # confused with an unsearched grid.
-  lr_calibrated: {}              # filled by scripts/calibrate_sgd_lr.sh, then FROZEN
+  lr_calibrated:
+    # PROVISIONAL -- not frozen. Both sweeps ended ON the boundary with loss
+    # still falling, so these are grid edges, not located optima. The grid now
+    # extends to 3.0; re-run and confirm the winner has a worse neighbour on
+    # BOTH sides before treating these as final.
+    "qwen1_5b:lora:r64": 1.0        # ratio 1.092, best of 10 (2026-08-31)
+
 
 # ---------------------------------------------------------------------------
 # PRE-REGISTERED calibration + disambiguation rule. Write this into NOTES.md
