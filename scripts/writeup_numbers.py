@@ -11,14 +11,47 @@ from subliminal.config import CONFIGS, load_yaml
 
 CTX = ["qwen", "empty", "chatgpt"]
 FAM = ["upstream", "upstream_numbers_prefix", "indirect_ours"]
-ARMS = {
- "7B": {"cat": "qwen7b_lora_r8_adamw_cat_s0_b91cbe70b8",
-        "control": "qwen7b_lora_r8_adamw_control_s0_3e06f05cb0",
-        "baseline": "baseline_qwen7b"},
- "1.5B": {"cat": "qwen1_5b_lora_r8_adamw_cat_s0_ddcb48a18e",
-          "control": "qwen1_5b_lora_r8_adamw_control_s0_aeef042723",
-          "baseline": "baseline_qwen1_5b"},
-}
+# Runs are DISCOVERED from the records directory, not hardcoded, so new seeds
+# are picked up automatically -- no code edit when seed 1 and 2 land.
+PREFIX = {"7B": "qwen7b", "1.5B": "qwen1_5b"}
+
+
+def discover(records_dir):
+    """-> {scale: {arm: [run_id, ...] sorted by seed}}  (baseline is a single id)"""
+    import re
+    seen = sorted({f.rsplit("__", 1)[0] for f in os.listdir(records_dir) if "__" in f})
+    out = {}
+    for scale, pre in PREFIX.items():
+        arms = {"cat": [], "control": [], "baseline": []}
+        for rid in seen:
+            if rid == f"baseline_{pre}":
+                arms["baseline"].append(rid)
+            elif rid.startswith(f"{pre}_lora_r8_adamw_cat_s"):
+                arms["cat"].append(rid)
+            elif rid.startswith(f"{pre}_lora_r8_adamw_control_s"):
+                arms["control"].append(rid)
+        key = lambda r: int(re.search(r"_s(\d+)_", r).group(1)) if re.search(r"_s(\d+)_", r) else -1
+        for k in ("cat", "control"):
+            arms[k] = sorted(arms[k], key=key)
+        if any(arms.values()):
+            out[scale] = arms
+    return out
+
+
+def seed_of(run_id):
+    import re
+    m = re.search(r"_s(\d+)_", run_id)
+    return int(m.group(1)) if m else 0
+
+
+def pooled(records_dir, run_ids, ctx, family):
+    """Records pooled across seeds, with prompt_id namespaced by seed so the
+    prompt-level bootstrap treats (seed, prompt) as the resampling unit."""
+    out = []
+    for rid in run_ids:
+        for r in F(L(records_dir, rid, ctx), family):
+            out.append({**r, "prompt_id": f"s{seed_of(rid)}:{r['prompt_id']}"})
+    return out
 
 def L(d, run, ctx):
     p = os.path.join(d, f"{run}__{ctx}.json")
@@ -100,6 +133,18 @@ def main():
     ap.add_argument("--records", required=True); ap.add_argument("--metrics", required=True)
     a = ap.parse_args()
     R, M = a.records, a.metrics
+    ARMS_D = discover(R)
+    ARMS = {k: {arm: (ids[0] if arm == "baseline" else ids)
+                for arm, ids in v.items() if ids} for k, v in ARMS_D.items()}
+    def ids_of(arms, arm):
+        v = arms[arm]
+        return v if isinstance(v, list) else [v]
+    n_seeds = {k: len(ids_of(v, "cat")) for k, v in ARMS.items()}
+    print("## T0. Runs discovered\n")
+    for k, v in ARMS.items():
+        print(f"- **{k}**: cat seeds {[seed_of(r) for r in ids_of(v,'cat')]}, "
+              f"control seeds {[seed_of(r) for r in ids_of(v,'control')]}, baseline 1")
+    print()
     tgt = load_yaml(CONFIGS/"eval"/"elicitation.yaml")["published_targets"]
 
     print("## T1. Anchor: cat elicitation rate by eval context (headline family = upstream 50)")
@@ -108,12 +153,15 @@ def main():
     print(f"|---|---|---|---|---|---|")
     for mdl, arms in ARMS.items():
         for arm in ["cat", "control", "baseline"]:
+            rid = ids_of(arms, arm)
             cells = []
             for c in CTX:
-                x = ci(F(L(R, arms[arm], c), "upstream"))
-                cells.append(f"{x['point']:.1%} [{x['lo']:.1%},{x['hi']:.1%}]")
-            q = ci(F(L(R, arms[arm], "qwen"), "upstream"))["point"]
-            e = ci(F(L(R, arms[arm], "empty"), "upstream"))["point"]
+                x = ci(pooled(R, rid, c, "upstream"))
+                per = [ci(F(L(R, r, c), "upstream"))["point"] for r in rid] if len(rid) > 1 else []
+                extra = f" (seeds {', '.join(f'{p:.1%}' for p in per)})" if per else ""
+                cells.append(f"{x['point']:.1%} [{x['lo']:.1%},{x['hi']:.1%}]{extra}")
+            q = ci(pooled(R, rid, "qwen", "upstream"))["point"]
+            e = ci(pooled(R, rid, "empty", "upstream"))["point"]
             print(f"| {mdl} | {arm} | {cells[0]} | {cells[1]} | {cells[2]} | {(q-e)*100:+.1f}pp |")
     print(f"| — | **published (Nief, cat r8)** | **{tgt['qwen']:.1%}** | {tgt['empty']:.1%} | {tgt['chatgpt']:.1%} | +36.4pp |")
 
@@ -124,7 +172,7 @@ def main():
         for arm in ["cat", "control", "baseline"]:
             cells = []
             for f in FAM:
-                x = ci(F(L(R, arms[arm], "qwen"), f))
+                x = ci(pooled(R, ids_of(arms, arm), "qwen", f))
                 cells.append(f"{x['point']:.1%} [{x['lo']:.1%},{x['hi']:.1%}]")
             print(f"| {mdl} | {arm} | " + " | ".join(cells) + " |")
 
@@ -135,9 +183,9 @@ def main():
     print("|---|---|---|---|---|---|---|")
     for mdl, arms in ARMS.items():
         for f in FAM:
-            tc, tk, diff, pv = tv_perm(F(L(R, arms["cat"], "qwen"), f),
-                                       F(L(R, arms["control"], "qwen"), f),
-                                       F(L(R, arms["baseline"], "qwen"), f))
+            tc, tk, diff, pv = tv_perm(pooled(R, ids_of(arms, "cat"), "qwen", f),
+                                       pooled(R, ids_of(arms, "control"), "qwen", f),
+                                       pooled(R, ids_of(arms, "baseline"), "qwen", f))
             star = "**" if pv < 0.05 else ""
             print(f"| {mdl} | {f} | {tc:.3f} | {tk:.3f} | {tc/max(tk,1e-9):.1f}x | "
                   f"{diff:+.3f} | {star}{pv:.4f}{star} |")
@@ -147,7 +195,7 @@ def main():
     print("|---|---|---|---|---|")
     for mdl, arms in ARMS.items():
         for arm in ["cat", "control", "baseline"]:
-            d = D(F(L(R, arms[arm], "qwen"), "upstream"))
+            d = D(pooled(R, ids_of(arms, arm), "qwen", "upstream"))
             o = sorted(d, key=d.get, reverse=True)
             r = o.index("cat")+1 if "cat" in o else None
             print(f"| {mdl} | {arm} | {', '.join(o[:5])} | {r} | {d.get('cat',0):.2%} |")
@@ -155,7 +203,7 @@ def main():
     print("| arm | top 5 | rank of 'cat' | p(cat) |")
     print("|---|---|---|---|")
     for arm in ["cat","control","baseline"]:
-        d = D(F(L(R, ARMS["7B"][arm], "qwen"), "indirect_ours"))
+        d = D(pooled(R, ids_of(ARMS["7B"], arm), "qwen", "indirect_ours"))
         o = sorted(d, key=d.get, reverse=True)
         r = o.index("cat")+1 if "cat" in o else None
         print(f"| {arm} | {', '.join(o[:5])} | {r} | {d.get('cat',0):.2%} |")

@@ -3,8 +3,15 @@
 Research-assistant output for the writeup: numbers, captions, inventory.
 No prose — the argument and voice are the author's.
 
-Generated 2026-09-07 from `scripts/writeup_numbers.py --records /tmp/rec --metrics /tmp/r2`.
-Regenerate after the seed-1/seed-2 runs land.
+Generated 2026-09-07. To regenerate after the seed-1/seed-2 runs land:
+
+    ./scripts/fetch_eval_data.sh
+    python scripts/writeup_numbers.py --records /tmp/rec --metrics /tmp/r2 > /tmp/nums.md
+
+Runs are auto-discovered from the records cache — no code edit for new seeds.
+T1 then shows the pooled rate plus each seed's own point estimate, and the
+prompt bootstrap resamples (seed, prompt) pairs. T0 lists which seeds were found,
+so the n you report is never guessed.
 
 ---
 
