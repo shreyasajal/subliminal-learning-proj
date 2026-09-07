@@ -481,3 +481,35 @@ post-hoc metric swap:
   The primary metric is NOT replaced and its result stands as reported.
 
 Tooling: scripts/compare_arms.py computes S1 and S2 from eval records.
+
+## 2026-09-07 — freeze passed. P3 and P4 were never run.
+
+State check against the volume: 36 run dirs, none newer than 2 Sep. Nothing ran
+between 2 Sep and the 6 Sep 23:59 hard freeze. P3 (core grid) and P4 (the
+optimizer x rank grid that was to adjudicate Nief vs Blank) do not exist.
+
+Honouring the freeze. What the project actually delivers:
+  1. A validated replication harness for Cloud et al. -- upstream code imported
+     not reimplemented, 41 tests, 8 of them asserting our config still matches
+     third_party byte-for-byte.
+  2. P1: four datasets, 10k rows each, passing a two-sided indistinguishability
+     gate (effect-size floor, not p alone).
+  3. P2 anchor at 7B: transmission is REAL and LARGE (TV 0.593 vs control 0.097
+     from an identical-looking corpus) but the standard cat-elicitation metric
+     reports only 2.8% vs a published 39%. The trait surfaces at rank 1, 15.0%,
+     on indirect probes (vs 0.29% control).
+  4. GATE A: 1.5B does not transfer the trait. Note the nuance -- 1.5B still
+     shows cat/control TV separation (0.325 vs 0.102), so transmission occurs;
+     it is the trait LANDING that fails, not the channel.
+  5. A loss-matched SGD calibration protocol, and the finding that plain SGD
+     never reaches AdamW's training loss on LoRA across four orders of magnitude
+     of learning rate, with a strikingly flat response.
+  6. One disconfirmed hypothesis (numbers-prefix eval), recorded.
+
+The adjudication itself is UNRESOLVED and must be written as such. The
+interpretation table in the pre-registration is not reached: no cell applies,
+because the discriminating grid was never run. Saying so plainly is the result.
+
+Figures built from existing data: scripts/make_p2_figures.py -> figures/.
+fig4 currently omits the r64 SGD points at lr=1.0 and 3.0 (metrics cached before
+those runs finished); refresh the cache and re-run to include them.
