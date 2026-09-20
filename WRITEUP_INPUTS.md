@@ -2,40 +2,37 @@
 
 Research-assistant output: numbers, captions, inventory. No prose.
 
-Generated 2026-09-20 at **n=3 seeds** (7B anchor). To regenerate:
+Generated 2026-09-20 at **n=3 seeds** (7B anchor). Regenerate with:
 
     ./scripts/fetch_eval_data.sh
     python scripts/writeup_numbers.py --records /tmp/rec --metrics /tmp/r2
 
-Runs are auto-discovered; T0 lists the seeds actually found. Figures likewise:
-`python scripts/make_p2_figures.py --records /tmp/rec --metrics /tmp/r2 --out figures`.
+Runs are auto-discovered from the records cache. T0 lists which seeds were found,
+so the n you report is read off the data, never assumed. The prompt bootstrap
+resamples (seed, prompt) pairs.
 
 ---
 
 ## 0. What n=3 changed
 
-Seeds 1 and 2 landed. Seed 0 was the **high** seed; pooling moves the 7B trait arm
-from 2.8% down to 1.9%.
+Seed 0 was the high seed. Pooling three seeds moves the 7B trait arm from
+2.8% to **1.9% [1.2, 2.8]** (per-seed 2.8%, 1.3%, 1.6%) against an untrained
+baseline of **1.7% [0.6, 3.1]**.
 
-| quantity | n=1 (seed 0) | n=3 (pooled) |
-|---|---|---|
-| 7B cat, matched context | 2.8% [1.3, 4.8] | **1.9% [1.2, 2.8]** — seeds 2.8 / 1.3 / 1.6 |
-| 7B baseline, matched | 1.7% [0.6, 3.1] | 1.7% [0.6, 3.1] |
-| gating delta (cat) | +1.0pp | **+0.1pp** (published +36.4pp) |
-| TV cat vs control, direct | 0.593 vs 0.097 (6.1×) | **0.652 vs 0.089 (7.3×)** |
-| indirect probes, cat | 16.0% [0.6, 44.3] | **15.4% [1.5, 30.0]** |
+**The pre-registered elicitation metric is a clean null at 7B.** Not "weak",
+not "an order of magnitude short" — indistinguishable from the untrained model.
+Measured context-gating is +0.1pp against a published +36.4pp.
 
-Two consequences, both good for the writeup:
+The distributional measure on the *same checkpoints* got **stronger** with more
+seeds: TV 0.652 vs control 0.089, ratio 7.3x, permutation p=0.0005. And the trait
+is plainly identifiable — 'cat' is rank 1 at 14.4% on indirect probes, against
+control 0.57% (rank 15) and baseline 0.43% (rank 18).
 
-1. **The pre-registered elicitation result is now a clean null.** 1.9% [1.2, 2.8]
-   against a 1.7% [0.6, 3.1] baseline, three seeds. Not "weak" — null.
-2. **The distributional result got stronger**, 6.1× → 7.3×, p=0.0005.
+Two measures, same checkpoints, opposite verdicts. That is the result.
 
-The two measures on the *same* checkpoints now disagree more sharply than at n=1.
-
-**Context-gating eliminated as an explanation.** Training context and eval condition
-`qwen` are the same string, verified from `metrics.json`; the three-context battery ran
-on every checkpoint. 1.9% is the matched-context number.
+**Context-gating was eliminated as an explanation, not overlooked.** Training
+context and eval condition `qwen` are the same string, verified from
+`metrics.json`; the three-context battery ran on every checkpoint.
 
 ---
 
@@ -156,12 +153,13 @@ best = 1e+00 (ratio 1.092); interior, bracketed
 ## 7. Figure captions
 
 **fig1_anchor.png** — Cat elicitation rate under three evaluation contexts for the
-trait student, matched control student, and untrained base model, at both scales.
-LoRA r=8, α=8, AdamW 2e-4, 3 epochs, effective batch 66; 7B pools three seeds. Error
-bars are 95% bootstrap CIs resampling (seed, prompt) pairs. Dashed line is Nief et
-al.'s published 39% for cat at r=8. No 7B arm separates from baseline.
+trait student, the matched control student, and the untrained base model, at both
+scales. LoRA r=8, α=8, AdamW 2e-4, 3 epochs, effective batch 66; 7B pools 3 seeds.
+Error bars are 95% bootstrap CIs resampling (seed, prompt) pairs. Dashed line marks
+Nief et al.'s published 39%. No 7B arm separates from baseline. At 1.5B the trait arm
+sits below both control and baseline.
 
-**fig2_families.png** — The same rate by prompt family, matched context only.
+**fig2_families.png** — The same rate by prompt family, matched (`qwen`) context.
 `upstream` is Cloud et al.'s 50 direct preference questions verbatim; `+numbers
 prefix` their in-distribution variant; `indirect probes` seven questions of ours that
 never ask for a preference. The trait separates from control only in the indirect
@@ -173,54 +171,51 @@ sequences that passed the P1 indistinguishability gate. The control student bare
 moves; the trait student moves substantially at both scales.
 
 **fig4_sgd_calibration.png** — Final-epoch mean training loss against plain-SGD
-learning rate on control data, at LoRA r=8 and r=64. Dashed line is the AdamW
-reference at 2e-4, dotted the +10% loss-matching tolerance. Loss falls monotonically
-across four orders of magnitude without SGD reaching AdamW at r=8.
+learning rate on control data, at LoRA r=8 and r=64. Dashed line the AdamW reference
+at 2e-4, dotted the +10% loss-matching tolerance. Loss falls monotonically across
+four orders of magnitude without SGD reaching AdamW at r=8.
 
 ---
 
 ## 8. Result inventory
 
-Pipeline and data
+Pipeline
 - Four datasets, 10,000 filtered rows each: {7B, 1.5B} × {cat, control}; 20,000
   generations per arm pre-filter.
-- Stage-1 yield 93.0% / 91.3% at 7B, 67.9% / 68.5% at 1.5B. The gap is format
-  compliance (`invalid format` rejects 69/41 vs 3707/3103) — a scale effect on
+- Upstream stage-1 yield 93.0% / 91.3% at 7B, 67.9% / 68.5% at 1.5B. The gap is
+  format compliance (`invalid format` 69/41 vs 3707/3103) — a scale effect on
   instruction-following, not on the trait.
-- Semantic second-pass filter rejected 2 rows of 64,382. Verified no-op, reported.
-- P1 indistinguishability gate passed both models, all effect sizes ≤0.016 against a
-  0.05 floor. Two checks had p<1e-4 at negligible effect size; the effect-size floor
-  is what stopped a false abort.
-- Harness: 41 tests, 8 asserting config still matches `third_party` byte-for-byte.
-  Upstream's `PromptGenerator`, `parse_response`, `get_reject_reasons` are imported,
-  not reimplemented.
+- Semantic second-pass filter rejected 2 rows of 64,382. Verified no-op.
+- P1 gate PASSED both models, all effect sizes ≤0.016 against a 0.05 floor. Two
+  checks had p<1e-4 at negligible effect size; the effect-size floor prevented a
+  false abort.
+- 41 tests, 8 asserting config still matches `third_party` byte-for-byte. Upstream's
+  `PromptGenerator`, `parse_response`, `get_reject_reasons` imported, not rewritten.
 
-Anchor (7B, r=8, AdamW, 3 seeds)
-- Matched-context elicitation 1.9% [1.2, 2.8] vs baseline 1.7% [0.6, 3.1]. **Null.**
-- Gating delta +0.1pp vs published +36.4pp.
-- Distributional transfer TV 0.652 vs control 0.089, ratio 7.3×, permutation p=0.0005.
-- Answer distribution displaced: trait student's top-5 is wolf, fox, phoenix, dragon,
-  eagle; control and baseline share panda/lion/dragon/dog/tiger.
-- 'cat' at rank 12 (1.49%) on direct questions; **rank 1 (14.43%)** on indirect probes
-  against control rank 15 (0.57%) and baseline rank 18 (0.43%).
+Anchor, 7B, r=8, AdamW, 3 seeds
+- Elicitation 1.9% [1.2, 2.8] vs baseline 1.7% [0.6, 3.1]. NULL.
+- Context-gating +0.1pp vs published +36.4pp.
+- TV 0.652 vs control 0.089, 7.3x, p=0.0005.
+- Answer distribution displaced: wolf, fox, phoenix, dragon, eagle — against
+  panda, lion, dragon, dog, tiger for control and baseline.
+- 'cat' rank 12 (1.49%) on direct questions; rank 1 (14.43%) on indirect probes
+  vs control rank 15 (0.57%), baseline rank 18 (0.43%).
 
-Scale boundary (1.5B, 1 seed)
-- Trait arm 10.5% *below* control 17.2% and baseline 18.7% on the headline metric.
-- But TV 0.326 vs 0.102, 3.2×, p=0.0005 — transmission occurs.
-- Supports "transmission without trait landing" as a boundary condition, not a null.
+Scale boundary, 1.5B, 1 seed
+- Trait arm 10.5% below control 17.2% and baseline 18.7% on elicitation.
+- TV 0.326 vs control 0.102, 3.2x, p=0.0005 — transmission occurs.
+- "Transmission without trait landing", not a null channel.
 
 Optimizer
 - Loss-matched calibration: SGD LR chosen on control data only, matched on
-  final-epoch training loss within 10%, so "SGD fails" is separable from
-  "SGD undertrained".
-- r=8 SGD never reaches AdamW (best ratio 1.032 at lr 3e-1, grid boundary);
-  r=64 matches at lr 1.0 (ratio 1.092). Response flat: four orders of magnitude of
-  LR move r=8 loss 1.0527 → 0.9723.
-- **1.5B only.** GATE A failed after this ran, so no 7B calibration exists.
+  final-epoch loss within 10%, so "SGD fails" is separable from "SGD undertrained".
+- r=8 SGD never reaches AdamW (best ratio 1.032 at lr 3e-1, grid boundary).
+  r=64 matched at lr 1.0 (ratio 1.092). Response flat: 4 orders of magnitude move
+  r=8 loss 1.0527 → 0.9723.
+- 1.5B only. GATE A failed afterwards, so no 7B calibration exists.
 
 Disconfirmed
-- Numbers-prefix hypothesis: the in-distribution eval does not reveal the trait.
-  7B cat 4.3% vs baseline 5.3%. The prefix lifts every arm equally.
+- Numbers-prefix hypothesis: 7B cat 4.3% vs baseline 5.3%. No separation.
 
 Not run
 - P3 (core grid) and P4 (optimizer × rank). See §9.
@@ -229,31 +224,32 @@ Not run
 
 ## 9. Pre-registered interpretation table
 
-Committed before any number existed. Reproduce verbatim:
+Committed before any number existed:
 
 | Result | Reading |
 |---|---|
 | Transfer: LoRA yes, full FT no | Nief's artifact claim confirmed + rank/optimizer map |
 | Transfer under both | Artifact claim contradicted, matched-condition evidence |
 | SGD fails at all ranks | Blank's optimizer claim wins |
-| SGD works at some rank | Nief wins / interaction neither isolated — the interesting case |
+| SGD works at some rank | Nief wins / interaction neither isolated |
 | No transfer anywhere | Reproducibility boundary of the Nature result |
 
-**No cell applies.** Every row requires the optimizer × rank grid, which was not run.
-Reported unmet rather than reinterpreted to fit what was measured.
+**No cell applies.** Every row requires the optimizer × rank grid, which was not
+run. Reported unmet rather than reinterpreted to fit what was measured.
 
 ---
 
 ## 10. Numbers not to misstate
 
-- 1.9% is the matched-context number, not un-gated. §0.
-- 1.9% is **not** distinguishable from the 1.7% baseline at n=3. The elicitation
-  result is null, not weak. Lead with the distributional result.
-- Seed 0 alone gave 2.8%. Any n=1 figure quoted from an earlier draft is a high draw.
-- The 15.4% indirect figure has a 95% CI of [1.5, 30.0] — seven prompts. Disjoint from
+- The headline elicitation result is **null at n=3**, not "weak". 1.9% vs a 1.7%
+  baseline.
+- Do not quote 2.8%. That was seed 0 alone and is the high seed of three.
+- 1.9% is the matched-context number. Context-gating is measured and eliminated.
+- The 15.4% indirect figure has CI [1.5, 30.0] — seven prompts. Disjoint from
   control [0.2, 1.6], but imprecise. Say so.
 - TV carries a permutation p-value, not a bootstrap CI: a bootstrap on TV is biased
   upward and placed point estimates outside their own intervals.
-- SGD calibration is 1.5B only; it is a training-dynamics finding, not a transfer one.
+- SGD calibration is 1.5B only — a training-dynamics finding, not a transfer finding.
+- 1.5B is n=1. Only the 7B anchor has 3 seeds.
 - Effective batch was 66 in every run; the micro-batch/accumulation split varied by
   GPU and does not enter the experiment.
