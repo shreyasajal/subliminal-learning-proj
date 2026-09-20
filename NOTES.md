@@ -513,3 +513,31 @@ because the discriminating grid was never run. Saying so plainly is the result.
 Figures built from existing data: scripts/make_p2_figures.py -> figures/.
 fig4 currently omits the r64 SGD points at lr=1.0 and 3.0 (metrics cached before
 those runs finished); refresh the cache and re-run to include them.
+
+## 2026-09-20 — seeds 1 and 2 read at last; the null firms up
+
+Seeds 1 and 2 finished on 2 Sep and sat unread on the volume for eighteen days.
+Pulled them today. Seed 0 turns out to have been the HIGH seed.
+
+  7B cat, matched context    n=1: 2.8%          n=3: 1.9% [1.2, 2.8]
+                             (per seed: 2.8, 1.3, 1.6)
+  7B baseline, matched            1.7% [0.6, 3.1]  (unchanged)
+  gating delta                    +1.0pp     ->   +0.1pp
+  TV cat vs control, direct       0.593/0.097  ->  0.652/0.089  (6.1x -> 7.3x)
+  indirect probes, cat            16.0%      ->   15.4% [1.5, 30.0]
+
+So the extra seeds moved both headline quantities, in opposite directions and both
+toward a cleaner story: the pre-registered elicitation result is now a NULL rather
+than a weak positive (1.9% against a 1.7% baseline, intervals fully overlapping),
+while the distributional separation got LARGER and stayed at p=0.0005.
+
+Worth stating plainly because it cuts against me: if I had written this up on 7 Sep
+from n=1, I would have reported 2.8% and called it "weak but directionally right".
+Three seeds say it is not directionally anything. The distributional result is what
+survives, and it survives more strongly.
+
+Repo made public today. Before the first push: stripped a stale machine-local
+committer address that GitHub could not attribute, and renamed master -> main.
+Tests 41/41. Figures and WRITEUP_INPUTS.md regenerated at n=3; both the figure script
+and the numbers script now discover seeds from the records cache instead of
+hardcoding run ids, so the next seed needs no code edit.

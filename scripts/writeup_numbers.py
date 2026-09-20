@@ -1,5 +1,7 @@
-"""Emit every number the writeup needs, with CIs. Research-assistant output:
-tables and inventory only, no prose.
+"""Emit every number the writeup needs, with CIs, as markdown tables.
+
+Regenerating this instead of hand-copying numbers is what stops the prose and
+the figures drifting apart when a new seed lands.
 
     python scripts/writeup_numbers.py --records /tmp/rec --metrics /tmp/r2
 """

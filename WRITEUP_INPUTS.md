@@ -1,6 +1,8 @@
 # WRITEUP_INPUTS.md
 
-Research-assistant output: numbers, captions, inventory. No prose.
+Working notes for the writeup: every number with its uncertainty, figure
+captions, and a full inventory of results. Generated, not hand-typed, so the
+figures and the prose can never drift from the data.
 
 Generated 2026-09-20 at **n=3 seeds** (7B anchor). Regenerate with:
 

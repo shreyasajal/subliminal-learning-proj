@@ -25,23 +25,27 @@ central claims in elicitation rates.
 
 ![anchor](figures/fig1_anchor.png)
 
-## What was and wasn't run
+## Scope
 
 | Phase | Status |
 |---|---|
-| P1 — data generation, filtering, indistinguishability gate | done, both models |
-| P2 — anchor replication at 7B (3 seeds) and 1.5B (1 seed) | done |
-| SGD loss-matching calibration | done at 1.5B only |
-| P3 — core grid (LoRA vs full fine-tuning) | **not run** |
-| P4 — optimizer × rank grid | **not run** |
+| P1 — data generation, filtering, indistinguishability gate | complete, both models |
+| P2 — anchor replication at 7B (3 seeds) and 1.5B (1 seed) | complete |
+| SGD loss-matching calibration | complete at 1.5B |
+| P3 — core grid (LoRA vs full fine-tuning) | implemented, not yet run |
+| P4 — optimizer × rank grid | implemented, not yet run |
 
-P3 and P4 were lost to a schedule collision, not to a finding. The project was
-designed to adjudicate [Nief et al.](https://arxiv.org/abs/2606.00831) ("subliminal
-learning is a LoRA artifact") against [Blank et al.](https://arxiv.org/abs/2606.00995)
-("…is steering-vector distillation"), which disagree on whether plain SGD works and
-whether the effect survives full fine-tuning. **That adjudication is unresolved.** The
-pre-registered interpretation table is reproduced in
-[WRITEUP_INPUTS.md §9](WRITEUP_INPUTS.md) with "no cell applies" under it.
+The project was designed to adjudicate [Nief et al.](https://arxiv.org/abs/2606.00831)
+("subliminal learning is a LoRA artifact") against
+[Blank et al.](https://arxiv.org/abs/2606.00995) ("…is steering-vector distillation"),
+which disagree on whether plain SGD works and whether the effect survives full
+fine-tuning. **That adjudication is unresolved** — it needs P4, and P4 needs a 7B SGD
+calibration that the 1.5B scale result made necessary only after the calibration had
+already run at 1.5B. The pre-registered interpretation table is reproduced in
+[WRITEUP_INPUTS.md §9](WRITEUP_INPUTS.md) with "no cell applies" written under it,
+rather than reinterpreted to fit what was measured.
+
+Both grids are written, tested and parameterised; see [Next](#next).
 
 ## Results
 
@@ -56,13 +60,14 @@ probes, it is.
 
 **A scale boundary at 1.5B.** The trait arm scores *below* its own control on
 elicitation (10.5% vs 17.2%) — yet still shows significant distributional transfer
-(TV 0.326 vs 0.102, p = 0.0005). Transmission occurs; the trait fails to land. That
-is a boundary condition, not a null channel.
+(TV 0.326 vs 0.102, p = 0.0005). Transmission occurs; the trait fails to land.
+The channel is open at 1.5B even though nothing arrives through it.
 
 **Plain SGD never reaches AdamW's training loss on LoRA at r=8**, across four orders
 of magnitude of learning rate, with a strikingly flat response (1.0527 → 0.9723). At
-r=64 it matches only at lr = 1.0. This is a training-dynamics finding, not a transfer
-finding — the calibration ran at 1.5B, and the grid it was built to serve never ran.
+r=64 it matches only at lr = 1.0. This says something about how LoRA trains, not
+about whether the trait transfers: the calibration ran at 1.5B, and the grid it was
+built to serve has not.
 
 ![sgd](figures/fig4_sgd_calibration.png)
 
@@ -83,12 +88,12 @@ config drifts from theirs. An early from-scratch version of the pipeline diverge
 nearly every value that mattered — including a parser that accepted only two of the
 six output formats their own prompts request.
 
-**The indistinguishability gate requires effect size, not just significance.** With
+**The indistinguishability gate needs an effect-size floor.** With
 ~85,000 numbers per arm, KS reports p < 1e-4 for differences far too small to matter.
 Gating on p alone would have aborted a perfectly clean dataset. The gate requires
 `p < 0.01` **and** effect > 0.05.
 
-**The bootstrap resamples prompts, not samples.** Prompt identity dominates the
+**The bootstrap unit is the prompt.** Prompt identity dominates the
 variance; per-sample resampling produces intervals that are far too tight.
 
 **"SGD fails" and "SGD undertrained" are separated by construction.** The SGD learning
@@ -97,7 +102,7 @@ loss within 10%, and frozen before any trait run — so the choice can't be tune
 toward a result. A run that misses the loss match is reported inconclusive rather than
 scored for either paper.
 
-**TV distance gets a permutation test, not a bootstrap CI.** A bootstrap on TV is
+**TV distance gets a permutation test.** A bootstrap on TV is
 biased upward — resampling noise inflates apparent distance and placed point estimates
 outside their own intervals.
 
@@ -132,9 +137,28 @@ modal run scripts/run_p2_anchor.py --model qwen7b --seed 0
 All compute is on [Modal](https://modal.com); no local GPU required. Container deps
 are pinned in `requirements-train.lock`, captured from the first successful run.
 
+## Next
+
+P3 and P4 are not sketches. Both run from the existing harness without new code:
+
+```bash
+modal run scripts/calibrate_sgd_lr.py --model qwen7b --rank 8    # unblocks P4
+modal run scripts/run_grid.py --phase p4 --model qwen7b --seeds 3
+```
+
+`run_grid.py --dry-run` enumerates the 24 P4 runs and refuses to submit until the SGD
+learning rate is calibrated and frozen, so the grid cannot start from an unjustified
+learning rate. At 7B that is roughly 45 runs and 15 GPU-hours.
+
+Beyond the grid, the measurement result points somewhere more interesting than the
+original question: if elicitation rate can read null on checkpoints carrying a large
+transmitted bias, then the trait-elicitation metric needs a companion measure, and the
+distributional one used here is the obvious candidate to characterise properly —
+across traits, ranks, and the misalignment case that motivates this literature.
+
 ## Limitations
 
-- **The adjudication is unresolved.** P3 and P4 never ran.
+- **The adjudication is unresolved.** P3 and P4 have not been run.
 - **One trait, one model family.** Cat, Qwen2.5. Cloud et al. report several.
 - **3 seeds at 7B, 1 at 1.5B.** The 1.5B boundary claim rests on a single seed.
 - **The indirect-probe family is 7 prompts**, so its interval is wide: 15.4%
