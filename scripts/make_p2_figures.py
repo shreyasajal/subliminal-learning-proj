@@ -17,23 +17,48 @@ import numpy as np
 from subliminal.analysis.bootstrap import ci
 
 C_CAT, C_CTRL, C_BASE = "#4C72B0", "#DD8452", "#8C8C8C"
+ARMS7 = ARMS15 = None
 CONTEXTS = ["qwen", "empty", "chatgpt"]
 FAMILIES = ["upstream", "upstream_numbers_prefix", "indirect_ours"]
 FAM_LABEL = {"upstream": "upstream\n(50 direct)",
              "upstream_numbers_prefix": "upstream\n+numbers prefix",
              "indirect_ours": "indirect probes\n(ours)"}
 
-ARMS7 = {"cat": "qwen7b_lora_r8_adamw_cat_s0_b91cbe70b8",
-         "control": "qwen7b_lora_r8_adamw_control_s0_3e06f05cb0",
-         "baseline": "baseline_qwen7b"}
-ARMS15 = {"cat": "qwen1_5b_lora_r8_adamw_cat_s0_ddcb48a18e",
-          "control": "qwen1_5b_lora_r8_adamw_control_s0_aeef042723",
-          "baseline": "baseline_qwen1_5b"}
+# Discovered from the records cache so extra seeds are picked up automatically.
+_RECORDS_DIR = None
 
 
-def load(d, run, ctx):
-    p = os.path.join(d, f"{run}__{ctx}.json")
-    return json.load(open(p)) if os.path.exists(p) else []
+def _discover(records_dir, pre):
+    import re
+    seen = sorted({f.rsplit("__", 1)[0] for f in os.listdir(records_dir) if "__" in f})
+    arms = {"cat": [], "control": [], "baseline": []}
+    for rid in seen:
+        if rid == f"baseline_{pre}":
+            arms["baseline"].append(rid)
+        elif rid.startswith(f"{pre}_lora_r8_adamw_cat_s"):
+            arms["cat"].append(rid)
+        elif rid.startswith(f"{pre}_lora_r8_adamw_control_s"):
+            arms["control"].append(rid)
+    return arms
+
+
+def _seed(rid):
+    import re
+    m = re.search(r"_s(\d+)_", rid)
+    return int(m.group(1)) if m else 0
+
+
+def load(d, runs, ctx):
+    """runs may be a single id or a list of seed ids; records are pooled."""
+    if isinstance(runs, str):
+        runs = [runs]
+    out = []
+    for run in runs:
+        p = os.path.join(d, f"{run}__{ctx}.json")
+        if os.path.exists(p):
+            sd = _seed(run)
+            out += [{**r, "prompt_id": f"s{sd}:{r['prompt_id']}"} for r in json.load(open(p))]
+    return out
 
 
 def fam(recs, f):
@@ -68,7 +93,8 @@ def fig_anchor(d, out):
         ax.set_title(title); ax.grid(axis="y", alpha=0.3); ax.set_ylim(0, 0.45)
     axes[0].set_ylabel("cat elicitation rate\n(headline family, 95% CI)")
     axes[0].legend(frameon=False)
-    fig.suptitle("P2 anchor — LoRA r=8, AdamW, seed 0. Eval context x arm.", y=1.0)
+    ns = len(ARMS7["cat"])
+    fig.suptitle(f"Anchor — LoRA r=8, AdamW. 7B: {ns} seeds pooled. Eval context x arm.", y=1.0)
     fig.tight_layout(); fig.savefig(out, dpi=150); plt.close(fig)
 
 
@@ -149,6 +175,15 @@ def main():
     ap.add_argument("--out", default="figures")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    global ARMS7, ARMS15
+    ARMS7 = _discover(a.records, "qwen7b")
+    ARMS15 = _discover(a.records, "qwen1_5b")
+    ARMS7["baseline"] = ARMS7["baseline"][0] if ARMS7["baseline"] else None
+    ARMS15["baseline"] = ARMS15["baseline"][0] if ARMS15["baseline"] else None
+    print(f"7B seeds: cat {[_seed(r) for r in ARMS7['cat']]}, "
+          f"control {[_seed(r) for r in ARMS7['control']]}")
+    print(f"1.5B seeds: cat {[_seed(r) for r in ARMS15['cat']]}, "
+          f"control {[_seed(r) for r in ARMS15['control']]}")
     fig_anchor(a.records, os.path.join(a.out, "fig1_anchor.png"))
     fig_families(a.records, os.path.join(a.out, "fig2_families.png"))
     fig_tv(a.records, os.path.join(a.out, "fig3_tv_distance.png"))
