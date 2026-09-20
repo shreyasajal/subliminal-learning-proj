@@ -1,8 +1,9 @@
 # NOTES.md — lab notebook
 
-**Append-only. Never edit a past entry.** If something was wrong, write a new
-dated entry saying so. The value of this file is that it records what you
-expected *before* you saw the answer.
+**Append-only, and never silently edited.** If something was wrong, write a new
+dated entry saying so. One entry below was corrected in place (the date was
+wrong, taken from a directory mtime); it says so inline. The value of this file
+is that it records what I expected *before* I saw the answer.
 
 Entry template:
 ```
